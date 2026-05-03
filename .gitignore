@@ -5,6 +5,12 @@
 backend/.env
 frontend/.env.local
 
+# Restricted MIMIC-IV / MIMIC-CXR derivative data — PhysioNet license
+# forbids redistribution. Even though our names/MRNs are synthetic, these
+# files contain real MIMIC subject_id / study_id / hadm_id / dicom paths.
+backend/local_db.json
+demo_form_values.json
+
 # Python
 backend/venv/
 backend/__pycache__/

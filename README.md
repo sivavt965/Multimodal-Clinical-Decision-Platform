@@ -178,6 +178,55 @@ See `.gitignore` for the full list.
 
 ---
 
-## License
+## License & Attribution
 
-See `LICENSE.txt` for the upstream Symile-MIMIC dataset license. Application code in `frontend/` and `backend/` is for clinical demonstration purposes only — **not for production clinical use without further validation**.
+This repository contains code and references to data under three different licenses. Read all three before redistributing.
+
+### Application code (`frontend/`, `backend/`)
+No open-source license declared — **all rights reserved** by default. For clinical demonstration purposes only; not for production clinical use without further validation.
+
+### Symile contrastive learning library (`symile-main/`)
+**MIT License** — Copyright © 2023 [rajesh-lab](https://github.com/rajesh-lab/symile). License text preserved in `symile-main/symile-main/LICENSE`. The vendored copy is unmodified; for the canonical version see the upstream repo.
+
+### MIMIC-IV / MIMIC-CXR-JPG / Symile-MIMIC dataset and derivatives
+**PhysioNet Credentialed Health Data License v1.5.0** — Copyright © 2025 MIT Laboratory for Computational Physiology. Full text in `LICENSE.txt`. This applies to:
+- Anything imported from the dataset (subject_ids, study_ids, hadm_ids, lab values, DICOM paths)
+- The preprocessing pipelines in `code/` and `symile-main/symile-main/experiments/data_processing/symile_mimic/`
+- The DenseNet checkpoint trained on MIMIC-CXR (`mimic_project/models/baseline_best.pt`)
+- Any inference outputs that map back to MIMIC subjects
+
+> **Data redistribution notice:** Per clauses 1–3 of the PhysioNet license, MIMIC-derived data must not be shared with non-credentialed users. This repo deliberately **omits**: `backend/local_db.json`, `demo_form_values.json`, `frontend/public/mock-data/dicoms/`, model weights, and the `*.csv` splits. Each of these contains real MIMIC identifiers and must be regenerated locally from your own credentialed PhysioNet access.
+
+---
+
+## Citations
+
+If you use this codebase for research, please cite all three foundational works.
+
+```bibtex
+@misc{saporta2024symile,
+  title  = {Contrasting with Symile: Simple Model-Agnostic Representation Learning for Unlimited Modalities},
+  author = {Saporta, Adriel and others},
+  year   = {2024},
+  url    = {https://github.com/rajesh-lab/symile}
+}
+
+@article{johnson2023mimiciv,
+  title   = {MIMIC-IV, a freely accessible electronic health record dataset},
+  author  = {Johnson, Alistair E. W. and Bulgarelli, Lucas and Shen, Lu and others},
+  journal = {Scientific Data},
+  volume  = {10},
+  number  = {1},
+  year    = {2023},
+  doi     = {10.1038/s41597-022-01899-x}
+}
+
+@article{johnson2019mimiccxrjpg,
+  title   = {MIMIC-CXR-JPG, a large publicly available database of labeled chest radiographs},
+  author  = {Johnson, Alistair E. W. and Pollard, Tom J. and Greenbaum, Nathaniel R. and others},
+  journal = {arXiv preprint arXiv:1901.07042},
+  year    = {2019}
+}
+```
+
+The Symile-MIMIC dataset itself has its own PhysioNet entry; cite it according to the DOI on the dataset page when using its specific train/val/test splits.
