@@ -120,6 +120,41 @@ The `/admin` route is hidden from the nav for non–system-admin roles and redir
 
 ---
 
+## Retraining the embeddings (advanced)
+
+The application currently uses **1024-d DenseNet121 GAP features** for FAISS similarity. The original Symile architecture proposes **448-d multimodal embeddings** (ECG 128 + CXR 256 + Lab 64) trained with the Symile contrastive loss. The full retraining pipeline is vendored in two locations:
+
+### Symile contrastive library — `symile-main/symile-main/`
+
+MIT licensed (rajesh-lab, 2023). Contains:
+
+- `symile/loss.py`, `symile/similarity.py` — the core contrastive loss + multi-modal similarity functions
+- `experiments/main.py` — training entry point
+- `experiments/models/symile_mimic_model.py` — the multimodal architecture
+- `experiments/data_processing/symile_mimic/` — canonical data preprocessing for MIMIC
+
+```bash
+cd symile-main/symile-main
+poetry install              # uses the vendored pyproject.toml + poetry.lock
+poetry run python experiments/main.py --help
+```
+
+### Application-side training — `mimic_project/`
+
+The repo also contains the **DenseNet baseline + FiLM-gated multimodal** training that produced the current `baseline_best.pt` checkpoint:
+
+- `mimic_project/src/training/train_baseline.py` — single-modality CXR baseline
+- `mimic_project/src/training/train_mm.py` — FiLM multimodal training
+- `mimic_project/src/models/model_mm_film_gated.py` — architecture
+- `mimic_project/src/preprocessing/` — preprocessing helpers
+- `mimic_project/inference_engine/` — what `backend/` imports for inference
+
+### Dataset preprocessing — `code/`
+
+The Symile-MIMIC release's official preprocessing scripts (`process_mimic_data.py`, `create_dataset_splits.py`, `process_and_save_tensors.py`). These produce the `train.csv`/`val.csv`/`test.csv` splits and the `.npy` tensor files referenced in the data card.
+
+---
+
 ## Audit log
 
 Eight mutating endpoints write to `audit_log` automatically:
