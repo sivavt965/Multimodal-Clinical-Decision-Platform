@@ -1,0 +1,120 @@
+name: mimic-cdss
+# ==============================================================================
+# environment.yml — Multimodal Clinical Decision Support Platform
+# VERIFIED against actual venv (pip freeze 2026-04-22)
+# ==============================================================================
+# Hardware target : NVIDIA RTX 3050 (Ampere, CUDA 12.1 driver-supported)
+#                   6 GB VRAM
+# CUDA build      : torch==2.5.1+cu121 / torchvision==0.20.1+cu121
+# Python          : 3.11.x
+#
+# Install:
+#   conda env create -f environment.yml
+#   conda activate mimic-cdss
+#
+# Packages NOT yet in venv (install manually after activation):
+#   pip install faiss-cpu          # or faiss-gpu-cu12 for GPU search
+#   pip install umap-learn         # Symile UMAP visualisation
+#   pip install wfdb               # ECG physiological signal reading
+#   pip install pydicom            # DICOM image support (.dcm files)
+#   pip install pytest             # unit tests
+# ==============================================================================
+
+channels:
+  - pytorch           # official PyTorch conda channel (GPU-enabled builds)
+  - conda-forge       # opencv, albumentations, faiss
+  - defaults
+
+dependencies:
+  # ── Python ──────────────────────────────────────────────────────────────
+  - python=3.11
+
+  # ── PyTorch + CUDA 12.1 (RTX 3050 — Ampere SM86, current venv) ─────────
+  # Actual installed: torch==2.5.1+cu121, torchvision==0.20.1+cu121
+  - pytorch=2.5.1=py3.11_cuda12.1_cudnn9_0
+  - torchvision=0.20.1=py311_cu121
+  - torchaudio=2.5.1=py311_cu121
+  - pytorch-cuda=12.1
+
+  # ── Scientific Computing ─────────────────────────────────────────────────
+  - numpy=2.1.2
+  - scipy=1.15.3
+  - pandas=2.3.3
+
+  # ── Machine Learning ────────────────────────────────────────────────────
+  - scikit-learn=1.7.2
+  - joblib=1.5.2
+
+  # ── Image Processing ────────────────────────────────────────────────────
+  - pillow=11.3.0
+  # opencv-python-headless matches the venv (no GUI dependencies)
+  # Use opencv instead if you need cv2.imshow() on a local machine
+  - opencv=4.12.0         # conda-forge; provides cv2 headless build
+  - albumentations=2.0.8
+
+  # ── Vector Search — FAISS ────────────────────────────────────────────────
+  # NOT currently installed in venv — install manually after env creation:
+  #   pip install faiss-cpu           # CPU fallback (universal)
+  #   pip install faiss-gpu-cu12      # GPU build for CUDA 12.x
+  #
+  # Conda alternative (uncomment ONE):
+  # - faiss-gpu=1.8.0=*cuda12*      # GPU, CUDA 12.x
+  # - faiss-cpu=1.8.0               # CPU fallback
+
+  # ── Dimensionality Reduction (UMAP — Symile visualisation) ───────────────
+  # NOT currently installed in venv — install manually:
+  #   pip install umap-learn
+  # - umap-learn=0.5.6
+
+  # ── Utilities ─────────────────────────────────────────────────────────────
+  - tqdm=4.67.1
+  - matplotlib=3.10.7
+  - pyyaml=6.0.3
+  - sympy=1.13.1
+  - requests=2.32.5
+  - charset-normalizer=3.4.4
+
+  # ── Pydantic (required by albumentations 2.x) ─────────────────────────────
+  - pydantic=2.12.5
+
+  # ── Build / package tools ────────────────────────────────────────────────
+  - pip=24.2
+  - setuptools>=75.0
+
+  # ── pip-only packages ────────────────────────────────────────────────────
+  - pip:
+      # DICOM image reading (optional; needed for .dcm inputs)
+      - pydicom==2.4.4
+
+      # ECG physiological signals (Symile pipeline)
+      - wfdb==4.1.2
+
+      # Google Cloud Storage (project GCS dataloaders)
+      - google-cloud-storage==3.6.0
+      - google-auth==2.43.0
+      - google-api-core==2.28.1
+      - google-cloud-core==2.5.0
+      - google-resumable-media==2.8.0
+      - proto-plus==1.26.1
+
+      # Testing
+      - pytest==8.3.3
+
+      # Vector search (choose one — see note above)
+      # - faiss-cpu
+      # - faiss-gpu-cu12
+
+# ==============================================================================
+# Post-install verification:
+#
+#   python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+#   python -c "import cv2; print(cv2.__version__)"
+#   python -c "import albumentations; print(albumentations.__version__)"
+#   python -c "import sklearn; print(sklearn.__version__)"
+#
+# Expected output (GPU env):
+#   2.5.1+cu121  True
+#   4.12.0
+#   2.0.8
+#   1.7.2
+# ==============================================================================

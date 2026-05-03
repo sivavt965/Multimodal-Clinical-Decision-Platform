@@ -59,3 +59,23 @@ demo_cases.csv
 # *.pdf
 # *.docx
 
+# mimic_project — source code is wanted, but exclude bulky outputs/data
+mimic_project/data/
+mimic_project/pip_cache/
+mimic_project/venv/
+mimic_project/temp/
+mimic_project/logs/
+mimic_project/plots/
+mimic_project/results/
+mimic_project/dir/
+mimic_project/25.3/
+mimic_project/0[0-8]_*/
+mimic_project/mm_phase2_full_eval_*/
+mimic_project/*.tar
+mimic_project/*.tar.gz
+mimic_project/*.zip
+mimic_project/*.csv
+mimic_project/*.txt
+mimic_project/*.jpg
+
+
