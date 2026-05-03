@@ -1,0 +1,231 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ──────────────────────────────────────────────────── */
+:root {
+  /* Brand */
+  --color-primary:       #2563EB;  /* blue-600 */
+  --color-primary-hover: #1D4ED8;  /* blue-700 */
+  --color-primary-soft:  #EFF6FF;  /* blue-50 */
+
+  /* Semantic */
+  --color-success:       #22C55E;
+  --color-warning:       #F59E0B;
+  --color-danger:        #EF4444;
+
+  /* Surfaces */
+  --color-bg:            #F8FAFC;  /* slate-50 */
+  --color-surface:       #FFFFFF;
+  --color-text:          #111827;  /* gray-900 */
+  --color-text-muted:    #6B7280;  /* gray-500 */
+  --color-border:        #E5E7EB;  /* gray-200 */
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.10), 0 6px 10px rgba(15, 23, 42, 0.05);
+  --shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.14);
+}
+
+/* ── Base ──────────────────────────────────────────────────────────── */
+html, body {
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+body {
+  background:
+    radial-gradient(at 0% 0%,   rgba(37, 99, 235, 0.03) 0, transparent 45%),
+    radial-gradient(at 100% 0%, rgba(14, 165, 233, 0.02) 0, transparent 45%),
+    var(--color-bg);
+  min-height: 100vh;
+}
+
+/* Better focus rings — consistent across inputs and buttons */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  border-radius: 6px;
+}
+
+/* Preserve element-specific focus appearance where intentional */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+/* ── Custom scrollbars ──────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;      /* slate-300 */
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;      /* slate-400 */
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes fadeInUp {
+  0%   { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInDown {
+  0%   { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  0%   { opacity: 0; transform: translateX(18px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  0%   { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0%   { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@keyframes fillBar {
+  from { width: 0%; }
+  to   { width: var(--target-width, 100%); }
+}
+
+/* ── Reusable animation utilities ───────────────────────────────────── */
+.animate-fadeIn       { animation: fadeIn 0.35s ease-out forwards; }
+.animate-fadeInUp     { animation: fadeInUp 0.35s ease-out forwards; }
+.animate-fadeInDown   { animation: fadeInDown 0.3s ease-out forwards; }
+.animate-slideInRight { animation: slideInRight 0.3s ease-out forwards; }
+.animate-scaleIn      { animation: scaleIn 0.25s ease-out forwards; }
+.animate-pulseSoft    { animation: pulseSoft 2s ease-in-out infinite; }
+
+/* Shimmer for skeletons */
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    #F1F5F9 0%,
+    #E2E8F0 50%,
+    #F1F5F9 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Default delay helpers (stagger without inline style) */
+.stagger-0  { animation-delay:  0ms; animation-fill-mode: both; }
+.stagger-1  { animation-delay: 40ms; animation-fill-mode: both; }
+.stagger-2  { animation-delay: 80ms; animation-fill-mode: both; }
+.stagger-3  { animation-delay: 120ms; animation-fill-mode: both; }
+.stagger-4  { animation-delay: 160ms; animation-fill-mode: both; }
+.stagger-5  { animation-delay: 200ms; animation-fill-mode: both; }
+.stagger-6  { animation-delay: 240ms; animation-fill-mode: both; }
+
+/* ── Component utility classes ──────────────────────────────────────── */
+@layer components {
+  /* Card — the base surface for dashboards, panels, modals */
+  .card-surface {
+    @apply bg-white rounded-xl border border-gray-100 shadow-sm;
+  }
+  .card-interactive {
+    @apply bg-white rounded-xl border border-gray-100 shadow-sm
+           transition-all duration-200
+           hover:-translate-y-0.5 hover:shadow-md hover:border-gray-200;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2
+           bg-blue-600 hover:bg-blue-700 active:bg-blue-800
+           text-white text-sm font-semibold rounded-lg shadow-sm
+           transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed
+           hover:shadow-md active:translate-y-px;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2
+           bg-white hover:bg-gray-50 active:bg-gray-100
+           text-gray-700 text-sm font-semibold border border-gray-200 hover:border-gray-300
+           rounded-lg shadow-sm transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5
+           text-gray-600 hover:text-gray-900 hover:bg-gray-100
+           text-sm font-medium rounded-lg transition-colors duration-150;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-4 py-2
+           bg-red-600 hover:bg-red-700 text-white
+           text-sm font-semibold rounded-lg shadow-sm
+           transition-all duration-150 disabled:opacity-50;
+  }
+
+  /* Badges */
+  .badge-base {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+           text-xs font-semibold border transition-colors;
+  }
+
+  /* Inputs */
+  .input-base {
+    @apply w-full px-3 py-2 bg-white border border-gray-200
+           rounded-lg text-sm text-gray-900 placeholder-gray-400
+           transition-colors duration-150
+           focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20;
+  }
+}
+
+/* ── Smooth defaults for interactive elements ───────────────────────── */
+button, a, input, select, textarea, [role="button"] {
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Disable tap highlight on touch */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tabular numerals everywhere for clinical data */
+.tabular-nums,
+input[type="number"],
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

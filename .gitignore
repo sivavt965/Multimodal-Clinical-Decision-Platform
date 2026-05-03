@@ -1,0 +1,61 @@
+# Secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+
+# Python
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+
+# Logs
+*.log
+backend/uvicorn.log
+backend/backend_*.log
+
+# Model weights & large data files
+mimic_project/models/*.pt
+mimic_project/models/*.ckpt
+backend/mimic-cxr-2.0.0-metadata.csv.gz
+data_npy/
+
+# FAISS index (regenerable via batch_infer.py)
+backend/faiss_index.bin
+backend/faiss_id_map.npy
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Frontend public mock data — generated, large, contains downloaded images
+frontend/public/mock-data/dicoms/
+frontend/public/mock-data/heatmaps/
+
+# Upstream / vendored source from the MIMIC-IV release
+symile-main/
+
+# Large data files at project root (regenerable from MIMIC-IV)
+symile_mimic_data.csv
+symile_mimic_model.ckpt
+train.csv
+val.csv
+test.csv
+val_retrieval.csv
+demo_cases.csv
+
+# PDFs / docx specs (binary; let them stay if you want, otherwise uncomment)
+# *.pdf
+# *.docx
+

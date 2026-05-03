@@ -1,0 +1,107 @@
+SAVE ALL FILES TO:
+B:\symile-mimic-a-multimodal-clinical-dataset-of-chest-x-rays-electrocardiograms-and-blood-labs-from-mimic-iv-1.0.0\frontend\public\mock-data\dicoms\
+
+Log into PhysioNet first: https://physionet.org/login/
+Then open each URL, right-click → Save As → use the filename shown.
+
+[1/34] case_3b1950dc.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/p11952902/s59853680/ca2072de-c2407195-52a28692-909abc3f-ffdd05dc.jpg
+
+[2/34] case_2d15ff35.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p15/p15880947/s52457077/961ad519-28cb7c1e-cbffc899-895b7046-a3890eed.jpg
+
+[3/34] case_38186792.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p18/p18830363/s50239060/8cf1576a-dc3d62b5-f479a641-93970390-8717d52a.jpg
+
+[4/34] case_f7148544.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/p11474034/s52145448/38d11cf4-31201d6b-f761f181-41cb6e56-dd63e24e.jpg
+
+[5/34] case_e427a8fb.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p19/p19722227/s50179625/44dc1f43-cf5c869b-ce73b900-a075c0b7-bc62a0b9.jpg
+
+[6/34] case_8343b48c.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p18/p18208434/s51355205/adaf646d-deb49f41-d8675cd2-949e5b8c-85ec4006.jpg
+
+[7/34] case_ec4ee9ea.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p13/p13505755/s53067476/ea712bd4-a9219a81-79c83f99-b3569369-5156b499.jpg
+
+[8/34] case_60b43b71.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p13/p13160874/s51860546/fce98979-0f2e775e-516d0141-7f0ea1a8-5a0c4979.jpg
+
+[9/34] case_f0d86a7b.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/p11496131/s59562511/98dd2a05-446f246b-4a6a0b24-51893821-c315cd2e.jpg
+
+[10/34] case_d71eef46.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p12/p12692062/s50586516/b85037ba-54d82db5-d8239b96-8aae46d0-ef478701.jpg
+
+[11/34] case_4abed709.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p14/p14188888/s58378837/6907b6fb-52f9ff7c-c96374bd-1416e43b-2a5fae63.jpg
+
+[12/34] case_a67377ff.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p10/p10976602/s50826311/b3c9ca9b-6913daee-e3fc00ef-bc48f947-5f225764.jpg
+
+[13/34] case_9c6b22f7.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p10/p10216556/s50981597/018aa67e-edbe363c-b7b7db2a-6cbf31b9-a55e9aae.jpg
+
+[14/34] case_36fcd761.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p18/p18589881/s55703398/f7e1ba52-abf13d1e-8b44b96e-dc65c6b5-6888fede.jpg
+
+[15/34] case_7d8ce05a.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p13/p13958446/s52638300/53e14f27-9d889ec5-b84ae3bb-9b61bccd-a0ed3d4c.jpg
+
+[16/34] case_dbb0f050.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p12/p12514563/s52057261/7705678d-e97fd6af-95a3781d-29db3f83-4811df87.jpg
+
+[17/34] case_7e31a8b0.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p17/p17901320/s50695434/fb95b0d2-2acbc31f-4ebaeecf-db8b421f-2aa3164f.jpg
+
+[18/34] case_bfbd4450.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p13/p13045537/s50400905/184821c9-ca7e5c9d-e395c747-c93ed58e-f6016bc3.jpg
+
+[19/34] case_27c45cfd.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p15/p15906743/s53083576/ce749038-b3adc72f-4b6e74d6-0a49a8e4-b39363d4.jpg
+
+[20/34] case_e4300324.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p15/p15557817/s50833143/591d63de-c6207d4f-f03aa20d-bc4721f0-ec00cca1.jpg
+
+[21/34] case_df7bea55.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p19/p19850525/s51380276/7c1980c0-9a1b764c-168b0395-8c37a6c4-b7f0db78.jpg
+
+[22/34] case_4026462e.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p10/p10817445/s55114343/13651340-ba729357-685a3797-a0ce7ba3-8c28560c.jpg
+
+[23/34] case_07afb995.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p13/p13505755/s53067476/ea712bd4-a9219a81-79c83f99-b3569369-5156b499.jpg
+
+[24/34] case_e96d0a66.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/p11531307/s52452987/42846124-cd92a85f-29171bcb-1810fba0-e4b14742.jpg
+
+[25/34] case_aa25e1b2.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p17/p17562503/s50692205/0621ed08-b94ab3c5-b49b96bf-08eda64b-478ccc43.jpg
+
+[26/34] case_88008c93.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p16/p16472049/s56767795/3f3ff61f-ceb502d4-ad3354cf-ae6115ec-c84b0967.jpg
+
+[27/34] case_7eb0348b.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/p11054411/s51153307/db400c7d-5b44edc1-5a5bfbcf-5bb41da4-40834dff.jpg
+
+[28/34] case_f3597bf0.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p17/p17388366/s50187719/601aa5d2-2ece0ce9-7530c5e0-45158ff0-b5ba1aa9.jpg
+
+[29/34] case_6c247d24.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p10/p10119514/s50808310/62f1d896-1ba64e45-6dea303e-ec84bef7-11e198f3.jpg
+
+[30/34] case_7e5f562d.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p19/p19471350/s55170761/a38861c4-d5aacacd-52df0234-66b01de1-11408d1b.jpg
+
+[31/34] case_1ad15ac4.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p14/p14726060/s50446694/19fb5b6b-d67165e9-812256b7-4994a3e0-75d960f8.jpg
+
+[32/34] case_1845969f.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/p11496131/s59562511/98dd2a05-446f246b-4a6a0b24-51893821-c315cd2e.jpg
+
+[33/34] case_d9dfe7a3.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p10/p10594290/s52506738/18752f1a-c05cb627-20a21fee-61938d89-d63fbffb.jpg
+
+[34/34] case_7037c41f.png
+https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p14/p14443991/s53203154/a3c32c0c-5e86e947-eeab36d9-7fc0fb8d-bb9922a1.jpg
