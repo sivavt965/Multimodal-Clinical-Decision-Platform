@@ -43,8 +43,9 @@ Thumbs.db
 frontend/public/mock-data/dicoms/
 frontend/public/mock-data/heatmaps/
 
-# Upstream / vendored source from the MIMIC-IV release
-symile-main/
+# Upstream / vendored source from the MIMIC-IV release — keep symile-main/
+# (MIT licensed, used for retraining the contrastive embedding model) but
+# scrub its caches and pyc artifacts. **/__pycache__/ already ignored above.
 
 # Large data files at project root (regenerable from MIMIC-IV)
 symile_mimic_data.csv
