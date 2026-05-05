@@ -7,7 +7,7 @@ import { PredictionSummary } from '@/components/case/viewer/PredictionSummary';
 import { GradCamViewer } from '@/components/case/viewer/GradCamViewer';
 import { UploadModal } from '@/components/case/UploadModal';
 import { CXRSkeleton, PredictionSkeleton } from '@/components/shared/Skeleton';
-import { reinferCase, regenerateGradCam, flagCaseCritical } from '@/lib/api';
+import { reinferCase, regenerateGradCam, flagCaseCritical, requestReanalysis } from '@/lib/api';
 import { useUserRole } from '@/lib/userRole';
 import {
   Layers, Eye, EyeOff, Settings2, SlidersHorizontal, RefreshCcw,
@@ -53,12 +53,30 @@ export function CXRAnalysisTab() {
   const { role } = useUserRole();
   const canModifyCxr = role === 'radiologist';
 
-  const handleRequestReanalysis = () => {
-    addToast({
-      type: 'success',
-      title: 'Reanalysis requested',
-      message: 'Radiologist will be notified to re-review this CXR.',
-    });
+  const [isRequestingReanalysis, setIsRequestingReanalysis] = useState(false);
+  const handleRequestReanalysis = async () => {
+    if (!currentCase) return;
+    setIsRequestingReanalysis(true);
+    try {
+      await requestReanalysis(
+        currentCase.case.id,
+        `Ward doctor requests reanalysis for ${currentCase.patient.first_name} ${currentCase.patient.last_name}.`,
+      );
+      addToast({
+        type: 'success',
+        title: 'Reanalysis requested',
+        message: 'Radiologist will see this case flagged in their queue.',
+      });
+      await refreshCurrentCase();
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Could not send request',
+        message: err?.message || 'Try again or contact admin.',
+      });
+    } finally {
+      setIsRequestingReanalysis(false);
+    }
   };
 
   const [isFlagging, setIsFlagging] = useState(false);
@@ -305,11 +323,12 @@ export function CXRAnalysisTab() {
                 </span>
                 <button
                   onClick={handleRequestReanalysis}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all duration-150"
+                  disabled={isRequestingReanalysis}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all duration-150 disabled:opacity-50"
                   title="Notify the radiologist to re-review this CXR"
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Request Reanalysis
+                  <MessageSquare className={cn("w-3.5 h-3.5", isRequestingReanalysis && "animate-pulse")} />
+                  {isRequestingReanalysis ? 'Sending…' : 'Request Reanalysis'}
                 </button>
               </>
             )}

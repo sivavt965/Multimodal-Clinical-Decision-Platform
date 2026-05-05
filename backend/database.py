@@ -210,6 +210,8 @@ def get_case_by_id(case_id: str) -> Optional[Dict[str, Any]]:
                 return r
         return None
 
+    # maybe_single() returns None instead of raising on 0 rows, so callers
+    # can distinguish "not found" (404) from "DB unavailable" (503).
     resp = (
         db.table("cases")
         .select(
@@ -219,11 +221,11 @@ def get_case_by_id(case_id: str) -> Optional[Dict[str, Any]]:
             "consultations(*)"
         )
         .eq("id", case_id)
-        .single()
+        .maybe_single()
         .execute()
     )
 
-    if not resp.data:
+    if not resp or not resp.data:
         return None
 
     return _normalise_joined_row(resp.data)
@@ -243,26 +245,33 @@ def create_new_case(
     db = get_db()
     if db == "LOCAL_MOCK":
         data = _load_local_db()
-        
-        # Upsert patient
+
+        # Upsert patient — MRN is the natural key. When a row already exists,
+        # PRESERVE id and created_at so prior cases referencing this patient
+        # stay valid; only refresh mutable demographic fields.
         existing_patient = next((p for p in data["patients"] if p["mrn"] == patient_payload["mrn"]), None)
         if existing_patient:
+            preserved_id = existing_patient["id"]
+            preserved_created = existing_patient.get("created_at")
             existing_patient.update(patient_payload)
+            existing_patient["id"] = preserved_id
+            if preserved_created:
+                existing_patient["created_at"] = preserved_created
             patient_row = existing_patient
         else:
             patient_row = patient_payload.copy()
             if "id" not in patient_row: patient_row["id"] = str(uuid.uuid4())
             data["patients"].append(patient_row)
-            
+
         # Insert case
         case_row = case_payload.copy()
         if "id" not in case_row: case_row["id"] = str(uuid.uuid4())
         case_row["patient_id"] = patient_row["id"]
         data["cases"].append(case_row)
-        
+
         _save_local_db(data)
-        logger.info("[DB-MOCK] Created case %s", case_row["id"])
-        
+        logger.info("[DB-MOCK] Created case %s for patient %s", case_row["id"], patient_row["id"])
+
         return {
             "patient": patient_row,
             "case": case_row,
@@ -270,13 +279,29 @@ def create_new_case(
             "consultation": None,
         }
 
-    # 1. Upsert patient (MRN is the natural key)
-    patient_resp = (
+    # 1. Look up patient by MRN; preserve id + created_at on collision so the
+    #    upsert doesn't reassign the primary key (which would orphan prior
+    #    cases via the FK on cases.patient_id).
+    existing_resp = (
         db.table("patients")
-        .upsert(patient_payload, on_conflict="mrn")
+        .select("id,created_at")
+        .eq("mrn", patient_payload["mrn"])
+        .limit(1)
         .execute()
     )
-    patient_row = patient_resp.data[0]
+    if existing_resp.data:
+        existing = existing_resp.data[0]
+        update_payload = {k: v for k, v in patient_payload.items() if k not in ("id", "created_at")}
+        upd = (
+            db.table("patients")
+            .update(update_payload)
+            .eq("id", existing["id"])
+            .execute()
+        )
+        patient_row = upd.data[0] if upd.data else {**existing, **update_payload}
+    else:
+        patient_resp = db.table("patients").insert(patient_payload).execute()
+        patient_row = patient_resp.data[0]
 
     # 2. Insert case
     case_payload["patient_id"] = patient_row["id"]
@@ -305,9 +330,26 @@ def update_case_inference(
     db = get_db()
     now = _utcnow()
 
+    # Each call to this function (re-)generates a heatmap for ONE label. Other
+    # findings should retain whatever heatmap was generated for them previously
+    # so the Grad-CAM toggle stays meaningful as the user clicks between
+    # findings (otherwise non-matching labels get gradcam_url=None and the
+    # toggle silently does nothing).
+    def _resolve_gradcam_url(label: str, prior_by_label: Dict[str, Optional[str]]) -> Optional[str]:
+        if label == heatmap_label:
+            return heatmap_url
+        return prior_by_label.get(label)
+
     if db == "LOCAL_MOCK":
         data = _load_local_db()
-        
+
+        # Snapshot existing per-label gradcam_urls before we delete the rows.
+        prior_gradcam: Dict[str, Optional[str]] = {
+            p["label"]: p.get("gradcam_url")
+            for p in data["predictions"]
+            if p["case_id"] == case_id
+        }
+
         # Predictions
         if predictions:
             # Remove existing for this case
@@ -326,22 +368,36 @@ def update_case_inference(
                     "mean_variance": p.get("mean_variance"),
                     "std_dev": p.get("std_dev"),
                     "mc_passes": p.get("mc_passes", 0),
-                    "gradcam_url": heatmap_url if p["label"] == heatmap_label else None,
+                    "gradcam_url": _resolve_gradcam_url(p["label"], prior_gradcam),
                     "gradcam_alpha": 0.45,
                 })
-        
+
         # Case update
         for c in data["cases"]:
             if c["id"] == case_id:
                 c["cxr_heatmap_url"] = heatmap_url
                 c["cxr_heatmap_label"] = heatmap_label
                 c["updated_at"] = now
-                
+
         _save_local_db(data)
         return
 
     # ── Predictions ──────────────────────────────────────────────────────────
     if predictions:
+        # Snapshot prior per-label gradcam_urls from Supabase before upserting.
+        try:
+            existing = (
+                db.table("predictions")
+                .select("label,gradcam_url")
+                .eq("case_id", case_id)
+                .execute()
+                .data
+                or []
+            )
+            prior_gradcam = {row["label"]: row.get("gradcam_url") for row in existing}
+        except Exception:
+            prior_gradcam = {}
+
         pred_rows = [
             {
                 "id": str(uuid.uuid4()),
@@ -356,7 +412,7 @@ def update_case_inference(
                 "mean_variance": p.get("mean_variance"),
                 "std_dev": p.get("std_dev"),
                 "mc_passes": p.get("mc_passes", 0),
-                "gradcam_url": heatmap_url if p["label"] == heatmap_label else None,
+                "gradcam_url": _resolve_gradcam_url(p["label"], prior_gradcam),
                 "gradcam_alpha": 0.45,
             }
             for p in predictions

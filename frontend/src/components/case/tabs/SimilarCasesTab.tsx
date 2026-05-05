@@ -9,6 +9,7 @@ import { CompareModal } from '@/components/case/CompareModal';
 import {
   Search, SlidersHorizontal, ArrowRight, UserCheck, Stethoscope,
   GitCompare, CheckCircle2, Activity, AlertTriangle, RefreshCw, Clock,
+  Layers,
 } from 'lucide-react';
 import Image from 'next/image';
 import { clsx } from 'clsx';
@@ -51,13 +52,17 @@ export function SimilarCasesTab() {
   const [compareCase, setCompareCase] = useState<{ id: string; score?: number | null } | null>(null);
   const [topK, setTopK] = useState(3);
   const [lastSearched, setLastSearched] = useState<Date | null>(null);
+  const [modality, setModality] = useState<'symile' | 'densenet' | 'unknown'>('unknown');
+  const [indexSize, setIndexSize] = useState(0);
 
   const runSearch = useCallback((k: number, caseId: string) => {
     setIsSearching(true);
     setError(null);
     fetchSimilarCases(caseId, k)
       .then((data) => {
-        setSimilarCases(data);
+        setSimilarCases(data.cases);
+        setModality(data.modality);
+        setIndexSize(data.indexSize);
         setLastSearched(new Date());
         setIsSearching(false);
       })
@@ -107,7 +112,25 @@ export function SimilarCasesTab() {
               )}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">FAISS Dense Retrieval</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-bold text-gray-900">FAISS Dense Retrieval</h2>
+                {!isSearching && !error && modality !== 'unknown' && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border",
+                      modality === 'symile'
+                        ? "bg-violet-50 text-violet-700 border-violet-200"
+                        : "bg-slate-50 text-slate-700 border-slate-200"
+                    )}
+                    title={modality === 'symile'
+                      ? "Symile-MIMIC retrieval — query embedding fuses CXR + ECG + Labs"
+                      : "DenseNet121 retrieval — query embedding uses CXR only"}
+                  >
+                    <Layers className="w-3 h-3" />
+                    {modality === 'symile' ? 'Multimodal (CXR + ECG + Labs)' : 'CXR-only'}
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-gray-500">
                 {isSearching
                   ? `Querying multimodal embedding space for ${patientName}…`
@@ -150,11 +173,17 @@ export function SimilarCasesTab() {
 
         {/* Timestamp */}
         {lastSearched && !isSearching && (
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-400 border-t border-gray-100 pt-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-400 border-t border-gray-100 pt-2 flex-wrap">
             <Clock className="w-3 h-3" />
             Last searched: {lastSearched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             <span className="mx-1 text-gray-200">·</span>
             Showing top {topK} results
+            {indexSize > 0 && (
+              <>
+                <span className="mx-1 text-gray-200">·</span>
+                Index: {indexSize} {modality === 'symile' ? 'multimodal' : 'CXR'} embeddings
+              </>
+            )}
           </div>
         )}
       </div>
@@ -248,9 +277,24 @@ export function SimilarCasesTab() {
                   <div className="space-y-3 flex-1">
                     <div>
                       <span className="text-[10px] uppercase font-bold tracking-widest text-gray-400 flex items-center gap-1.5 mb-1">
-                        <Stethoscope className="w-3 h-3" /> Primary Diagnosis
+                        <Stethoscope className="w-3 h-3" /> Documented Findings
                       </span>
-                      <p className="text-sm font-medium text-gray-800">{prec.top_finding_label || 'Unknown'}</p>
+                      {prec.ground_truth_findings && prec.ground_truth_findings.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {prec.ground_truth_findings.map((label) => (
+                            <span
+                              key={label}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm font-medium text-gray-800">
+                          {prec.top_finding_label || 'No documented findings'}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold tracking-widest text-gray-400 flex items-center gap-1.5 mb-1">

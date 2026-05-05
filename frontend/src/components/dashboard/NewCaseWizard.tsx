@@ -42,6 +42,7 @@ export function NewCaseWizard({ isOpen, onClose }: NewCaseWizardProps) {
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', mrn: '', age: '', sex: 'M',
     rhythm: 'Normal Sinus Rhythm',
+    mimicSubjectId: '',
   });
 
   // Lab values — keyed by MIMIC-IV itemid
@@ -59,7 +60,7 @@ export function NewCaseWizard({ isOpen, onClose }: NewCaseWizardProps) {
     if (!isOpen) {
       setTimeout(() => {
         setStep(1); setIsSubmitting(false); setErrors({});
-        setFormData({ firstName: '', lastName: '', mrn: '', age: '', sex: 'M', rhythm: 'Normal Sinus Rhythm' });
+        setFormData({ firstName: '', lastName: '', mrn: '', age: '', sex: 'M', rhythm: 'Normal Sinus Rhythm', mimicSubjectId: '' });
         setLabValues({}); setLabSearch(''); setImageFile(null);
         setExpandedCategories(new Set(['CBC', 'Metabolic']));
       }, 300);
@@ -145,7 +146,14 @@ export function NewCaseWizard({ isOpen, onClose }: NewCaseWizardProps) {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const payload = { ...formData, labs: labValues };
+      const trimmedSubject = formData.mimicSubjectId.trim();
+      const payload: Record<string, unknown> = { ...formData, labs: labValues };
+      if (trimmedSubject) {
+        const parsedSubject = Number.parseInt(trimmedSubject, 10);
+        if (Number.isFinite(parsedSubject) && parsedSubject > 0) {
+          payload.mimic_subject_id = parsedSubject;
+        }
+      }
       const data = new FormData();
       data.append('case_data', JSON.stringify(payload));
       if (imageFile) data.append('image', imageFile);
@@ -243,6 +251,25 @@ export function NewCaseWizard({ isOpen, onClose }: NewCaseWizardProps) {
                     <option value="F">Female</option>
                     <option value="Other">Other</option>
                   </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                    Reference MIMIC subject_id
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-200">Optional</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="mimicSubjectId"
+                    value={formData.mimicSubjectId}
+                    onChange={handleChange}
+                    className={inputClass('mimicSubjectId')}
+                    placeholder="e.g. 10011938"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Linking a MIMIC-IV subject pulls their real CXR + ECG + Labs tensors into the
+                    Symile multimodal index, enabling cross-modal retrieval against the 38 backfilled cases.
+                    Leave blank to register a synthetic case (CXR-only retrieval).
+                  </p>
                 </div>
               </div>
             </div>
@@ -408,6 +435,12 @@ export function NewCaseWizard({ isOpen, onClose }: NewCaseWizardProps) {
                   <div className="font-semibold text-gray-900">{formData.rhythm}</div>
                   <div className="text-gray-500">Image Attached:</div>
                   <div className="font-semibold text-gray-900">{imageFile ? imageFile.name : 'None'}</div>
+                  <div className="text-gray-500">MIMIC subject_id:</div>
+                  <div className="font-semibold text-gray-900">
+                    {formData.mimicSubjectId.trim()
+                      ? <><span className="font-mono">{formData.mimicSubjectId.trim()}</span> <span className="text-violet-700 text-xs">→ multimodal indexing</span></>
+                      : <span className="text-gray-400">None — CXR-only retrieval</span>}
+                  </div>
                 </div>
               </div>
               <p className="text-center text-sm text-gray-500 mt-4">

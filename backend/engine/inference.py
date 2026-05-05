@@ -28,6 +28,7 @@ MC Dropout:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -78,6 +79,12 @@ _PREPROCESS = transforms.Compose(
 # MC Dropout configuration
 MC_DROPOUT_PASSES: int = 10    # Capped at 10 for real-time inference
 MC_DROPOUT_TIMEOUT_SEC: float = 30.0  # Abort MC dropout after this many seconds
+
+# The model singleton is shared across all threads (FastAPI BackgroundTasks land
+# in a thread pool). MC Dropout flips it into train() mode mid-call, so a
+# parallel "deterministic" forward pass on the same model would see stochastic
+# outputs. Serialise every model-touching section with this lock.
+_INFERENCE_LOCK: threading.Lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -163,17 +170,20 @@ def _compute_gradcam(
     target_layer = model.features.denseblock4
     hook = _GradCAMHook(target_layer)
 
-    model.zero_grad()
-    with torch.set_grad_enabled(True):
-        x = input_tensor.to(device).requires_grad_(True)
-        logits = model(x)
-        score = logits[0, class_idx]
-        score.backward()
+    try:
+        model.zero_grad()
+        with torch.set_grad_enabled(True):
+            x = input_tensor.to(device).requires_grad_(True)
+            logits = model(x)
+            score = logits[0, class_idx]
+            score.backward()
 
-    hook.remove()
-
-    grads = hook.gradients        # (1, C, H, W)
-    acts  = hook.activations      # (1, C, H, W)
+        grads = hook.gradients        # (1, C, H, W)
+        acts  = hook.activations      # (1, C, H, W)
+    finally:
+        # Always remove the forward+backward hooks — leaving them registered
+        # on a shared singleton model leaks state and slows every later pass.
+        hook.remove()
 
     weights = grads.mean(dim=(2, 3), keepdim=True)
     cam = (weights * acts).sum(dim=1, keepdim=True)
@@ -362,11 +372,19 @@ def _extract_gap_embedding(
 
 def run_cxr_inference(
     image_path: str | Path,
-    target_label: str = "Pleural Effusion",
+    target_label: Optional[str] = None,
     case_id: Optional[str] = None,
 ) -> InferenceResult:
     """
     Run DenseNet121 inference + Grad-CAM + MC Dropout + GAP embedding.
+
+    Parameters
+    ----------
+    target_label : Optional[str]
+        Which CheXpert label to compute Grad-CAM for. Pass None (the default)
+        to auto-pick the highest-probability label after the forward pass —
+        this is what the initial-upload path wants. Pass an explicit label
+        (e.g. from the regenerate-heatmap endpoint) to force that class.
     """
     from engine.vector_store import get_vector_store
 
@@ -379,17 +397,15 @@ def run_cxr_inference(
     model_labels = loader.model_labels
 
     # ------------------------------------------------------------------
-    # 0. Validate target label
+    # 0. Validate target label (if explicitly requested)
     # ------------------------------------------------------------------
-    if target_label not in model_labels:
+    if target_label is not None and target_label not in model_labels:
         logger.warning(
-            "[Inference] Label '%s' not in model's %d classes; defaulting to '%s'.",
-            target_label, len(model_labels), model_labels[0],
+            "[Inference] Label '%s' not in model's %d classes; falling back to "
+            "auto-pick top label.",
+            target_label, len(model_labels),
         )
-        target_label = model_labels[0]
-
-    class_idx = model_labels.index(target_label)
-    result.heatmap_label = target_label
+        target_label = None
 
     # ------------------------------------------------------------------
     # 1. Load image
@@ -402,7 +418,7 @@ def run_cxr_inference(
         return result
 
     # ------------------------------------------------------------------
-    # 2. Pre-process (512×512, simple 0-1 scaling)
+    # 2. Pre-process (512×512, ImageNet-normalised)
     # ------------------------------------------------------------------
     input_tensor: torch.Tensor = _PREPROCESS(original_img).unsqueeze(0)
     logger.info(
@@ -413,109 +429,116 @@ def run_cxr_inference(
     )
 
     # ------------------------------------------------------------------
-    # 3. Forward pass — deterministic sigmoid probabilities
+    # Lock the singleton model for the rest of this call. Steps 3-6 all
+    # mutate or depend on global module state (eval/train, hooks, autograd).
     # ------------------------------------------------------------------
-    try:
-        model.eval()
-        with torch.no_grad():
-            logits = model(input_tensor.to(device))
-            probs  = torch.sigmoid(logits).squeeze().cpu()
-    except Exception as exc:
-        result.error = f"Forward pass failed: {exc}"
-        logger.error("[Inference] %s", result.error)
-        return result
+    with _INFERENCE_LOCK:
+        # ------------------------------------------------------------------
+        # 3. Forward pass — deterministic sigmoid probabilities
+        # ------------------------------------------------------------------
+        try:
+            model.eval()
+            with torch.no_grad():
+                logits = model(input_tensor.to(device))
+                probs  = torch.sigmoid(logits).squeeze().cpu()
+        except Exception as exc:
+            result.error = f"Forward pass failed: {exc}"
+            logger.error("[Inference] %s", result.error)
+            return result
 
-    # Only use the labels the model was actually trained on
-    prob_dict: dict[str, float] = {}
-    for i, label in enumerate(model_labels):
-        prob_dict[label] = float(probs[i])
-
-    result.probabilities = prob_dict
-
-    # Grad-CAM target = highest-probability label
-    top_label = max(prob_dict, key=prob_dict.get)  # type: ignore
-    class_idx = model_labels.index(top_label)
-    target_label = top_label
-    result.heatmap_label = target_label
-
-    # ------------------------------------------------------------------
-    # 4. MC Dropout uncertainty estimation
-    # ------------------------------------------------------------------
-    try:
-        mc_mean, mc_std = _run_mc_dropout(model, device, input_tensor.clone())
-
-        mc_mean_dict: dict[str, float] = {}
-        mc_std_dict: dict[str, float] = {}
+        # Only use the labels the model was actually trained on
+        prob_dict: dict[str, float] = {}
         for i, label in enumerate(model_labels):
-            mc_mean_dict[label] = float(mc_mean[i])
-            mc_std_dict[label] = float(mc_std[i])
+            prob_dict[label] = float(probs[i])
 
-        # Per-class variance → mean variance
-        variances = [mc_std[model_labels.index(l)] ** 2 for l in model_labels]
-        mean_var = float(np.mean(variances))
+        result.probabilities = prob_dict
 
-        result.mc_mean_probs = mc_mean_dict
-        result.mc_std_devs = mc_std_dict
-        result.mc_mean_variance = mean_var
-        result.mc_uncertainty_level = _uncertainty_level(mean_var)
+        # Honour caller's target_label if given; otherwise auto-pick top class.
+        if target_label is None:
+            target_label = max(prob_dict, key=prob_dict.get)  # type: ignore
+        class_idx = model_labels.index(target_label)
+        result.heatmap_label = target_label
 
-        logger.info(
-            "[Inference] MC Dropout (%d passes): mean_var=%.5f → %s",
-            MC_DROPOUT_PASSES, mean_var, result.mc_uncertainty_level,
-        )
-    except Exception as exc:
-        logger.error("[Inference] MC Dropout failed: %s", exc, exc_info=True)
+        # ------------------------------------------------------------------
+        # 4. MC Dropout uncertainty estimation
+        # ------------------------------------------------------------------
+        try:
+            mc_mean, mc_std = _run_mc_dropout(model, device, input_tensor.clone())
 
-    # ── Build predictions list (only the 8 trained labels) ─────────────
-    # Per-finding uncertainty derived from each label's own std_dev — far more
-    # informative than the global mean_variance which is the same for all rows.
-    result.predictions = [
-        {
-            "label": label,
-            "probability": prob_dict[label],
-            "risk_badge": _risk_badge(prob_dict[label]),
-            "uncertainty_level": (
-                _per_finding_uncertainty((result.mc_std_devs or {}).get(label, 0.0))
-                if result.mc_std_devs is not None
-                else result.mc_uncertainty_level
-            ),
-            "mean_variance": result.mc_mean_variance,
-            "std_dev": (result.mc_std_devs or {}).get(label, None),
-            "mc_passes": MC_DROPOUT_PASSES,
-        }
-        for label in model_labels
-    ]
+            mc_mean_dict: dict[str, float] = {}
+            mc_std_dict: dict[str, float] = {}
+            for i, label in enumerate(model_labels):
+                mc_mean_dict[label] = float(mc_mean[i])
+                mc_std_dict[label] = float(mc_std[i])
 
-    # ------------------------------------------------------------------
-    # 5. GAP embedding extraction
-    # ------------------------------------------------------------------
-    try:
-        model.eval()
-        embedding = _extract_gap_embedding(model, device, input_tensor.clone())
-        result.embedding = embedding
+            # Per-class variance → mean variance
+            variances = [mc_std[model_labels.index(l)] ** 2 for l in model_labels]
+            mean_var = float(np.mean(variances))
 
-        if case_id:
-            vs = get_vector_store()
-            vs.add_to_index(case_id=case_id, embedding=embedding)
-            vs.save()
-            logger.info("[Inference] Embedding indexed and persisted for case %s", case_id)
-    except Exception as exc:
-        logger.error("[Inference] GAP embedding failed: %s", exc, exc_info=True)
+            result.mc_mean_probs = mc_mean_dict
+            result.mc_std_devs = mc_std_dict
+            result.mc_mean_variance = mean_var
+            result.mc_uncertainty_level = _uncertainty_level(mean_var)
 
-    # ------------------------------------------------------------------
-    # 6. Grad-CAM
-    # ------------------------------------------------------------------
-    try:
-        model.eval()
-        cam = _compute_gradcam(model, device, input_tensor.clone(), class_idx)
-        overlay = _overlay_heatmap(original_img, cam)
-        stem = f"heatmap_{image_path.stem}_{uuid.uuid4().hex[:8]}"
-        result.heatmap_url = _save_heatmap(overlay, stem)
-    except Exception as exc:
-        logger.error("[Inference] Grad-CAM failed: %s", exc, exc_info=True)
-        result.heatmap_url = None
+            logger.info(
+                "[Inference] MC Dropout (%d passes): mean_var=%.5f → %s",
+                MC_DROPOUT_PASSES, mean_var, result.mc_uncertainty_level,
+            )
+        except Exception as exc:
+            logger.error("[Inference] MC Dropout failed: %s", exc, exc_info=True)
 
-    # Log top finding
+        # ── Build predictions list (only the 8 trained labels) ─────────────
+        # Per-finding uncertainty derived from each label's own std_dev — far more
+        # informative than the global mean_variance which is the same for all rows.
+        result.predictions = [
+            {
+                "label": label,
+                "probability": prob_dict[label],
+                "risk_badge": _risk_badge(prob_dict[label]),
+                "uncertainty_level": (
+                    _per_finding_uncertainty((result.mc_std_devs or {}).get(label, 0.0))
+                    if result.mc_std_devs is not None
+                    else result.mc_uncertainty_level
+                ),
+                "mean_variance": result.mc_mean_variance,
+                "std_dev": (result.mc_std_devs or {}).get(label, None),
+                "mc_passes": MC_DROPOUT_PASSES,
+            }
+            for label in model_labels
+        ]
+
+        # ------------------------------------------------------------------
+        # 5. GAP embedding extraction
+        # ------------------------------------------------------------------
+        try:
+            model.eval()
+            embedding = _extract_gap_embedding(model, device, input_tensor.clone())
+            result.embedding = embedding
+
+            if case_id:
+                vs = get_vector_store()
+                vs.add_to_index(case_id=case_id, embedding=embedding)
+                # Debounced save — disk write at most once per interval, and the
+                # lifespan shutdown hook does a forced flush so nothing is lost.
+                vs.save_if_needed()
+                logger.info("[Inference] Embedding indexed for case %s", case_id)
+        except Exception as exc:
+            logger.error("[Inference] GAP embedding failed: %s", exc, exc_info=True)
+
+        # ------------------------------------------------------------------
+        # 6. Grad-CAM
+        # ------------------------------------------------------------------
+        try:
+            model.eval()
+            cam = _compute_gradcam(model, device, input_tensor.clone(), class_idx)
+            overlay = _overlay_heatmap(original_img, cam)
+            stem = f"heatmap_{image_path.stem}_{uuid.uuid4().hex[:8]}"
+            result.heatmap_url = _save_heatmap(overlay, stem)
+        except Exception as exc:
+            logger.error("[Inference] Grad-CAM failed: %s", exc, exc_info=True)
+            result.heatmap_url = None
+
+    # Log top finding (outside the lock — no model access here)
     modeled = {k: v for k, v in prob_dict.items() if v > 0}
     if modeled:
         top_label = max(modeled, key=modeled.get)  # type: ignore

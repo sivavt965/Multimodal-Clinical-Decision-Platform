@@ -5,10 +5,15 @@
  * The four demo users below match the rows seeded by
  * `backend/seed_demo_users.py`.  When real auth lands (Phase 5), this
  * file is replaced by a Supabase session-derived hook.
+ *
+ * Internals: a tiny external store + useSyncExternalStore so that every
+ * consumer of useUserRole() re-renders when ANY component calls setRole().
+ * Without this, each useState was local and switching roles in the header
+ * left other components stale until a manual refresh.
  */
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { UserRole, PlatformUser } from './types';
 
 const STORAGE_KEY = 'cdss_dev_role';
@@ -49,16 +54,42 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   system_admin:   'System Admin',
 };
 
+// ── External store wiring ────────────────────────────────────────────────
+const listeners = new Set<() => void>();
+
 function readRole(): UserRole {
   if (typeof window === 'undefined') return DEFAULT_ROLE;
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored && stored in DEMO_USERS) return stored as UserRole;
-  return DEFAULT_ROLE;
+  const v = window.localStorage.getItem(STORAGE_KEY);
+  return v && v in DEMO_USERS ? (v as UserRole) : DEFAULT_ROLE;
 }
 
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  // Also listen for storage events from other tabs.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', listener);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', listener);
+    }
+  };
+}
+
+function setRoleGlobal(r: UserRole): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(STORAGE_KEY, r);
+  }
+  listeners.forEach((l) => l());
+}
+
+const getServerSnapshot = (): UserRole => DEFAULT_ROLE;
+
 /**
- * Returns the active role and a setter that persists to localStorage.
- * Hydrates after mount to avoid SSR/CSR mismatch (default role used pre-hydration).
+ * Returns the active role (synced across all components) and a global
+ * setter. Hydrated flag stays around so consumers can skip render until
+ * client-side mount when they need to avoid a flash of the default role.
  */
 export function useUserRole(): {
   role: UserRole;
@@ -66,20 +97,8 @@ export function useUserRole(): {
   setRole: (r: UserRole) => void;
   hydrated: boolean;
 } {
-  const [role, setRoleState] = useState<UserRole>(DEFAULT_ROLE);
+  const role = useSyncExternalStore(subscribe, readRole, getServerSnapshot);
   const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    setRoleState(readRole());
-    setHydrated(true);
-  }, []);
-
-  const setRole = (r: UserRole) => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, r);
-    }
-    setRoleState(r);
-  };
-
-  return { role, user: DEMO_USERS[role], setRole, hydrated };
+  useEffect(() => { setHydrated(true); }, []);
+  return { role, user: DEMO_USERS[role], setRole: setRoleGlobal, hydrated };
 }

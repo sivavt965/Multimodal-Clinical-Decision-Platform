@@ -35,9 +35,14 @@ mimic_project/models/*.ckpt
 backend/mimic-cxr-2.0.0-metadata.csv.gz
 data_npy/
 
-# FAISS index (regenerable via batch_infer.py)
+# FAISS index (regenerable via batch_infer.py / backfill_symile.py)
 backend/faiss_index.bin
 backend/faiss_id_map.npy
+backend/faiss_symile_index.bin
+backend/faiss_symile_id_map.npy
+
+# TS incremental build cache
+frontend/tsconfig.tsbuildinfo
 
 # OS/IDE
 .DS_Store
@@ -74,8 +79,8 @@ mimic_project/temp/
 mimic_project/logs/
 mimic_project/plots/
 mimic_project/results/
-mimic_project/dir/
-mimic_project/25.3/
+mimic_project/dir
+mimic_project/25.3
 mimic_project/0[0-8]_*/
 mimic_project/mm_phase2_full_eval_*/
 mimic_project/*.tar

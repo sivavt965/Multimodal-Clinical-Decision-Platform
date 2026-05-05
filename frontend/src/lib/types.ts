@@ -335,8 +335,15 @@ export interface CaseSummary {
   top_finding_probability: number | null;
   consultation_open: boolean;
   urgency_flag: boolean;
+  reanalysis_requested?: boolean;
   similarity_score?: number | null;  // [0, 100] — populated by /similar endpoint only
   cxr_dicom_url?: string | null;
+  /**
+   * Expert-annotated CheXpert findings from the Symile-MIMIC ground-truth CSV.
+   * A real chest X-ray case usually has several positive findings; the
+   * similar-cases card displays these instead of just the model's argmax.
+   */
+  ground_truth_findings?: string[];
 }
 
 // ---------------------------------------------------------------------------

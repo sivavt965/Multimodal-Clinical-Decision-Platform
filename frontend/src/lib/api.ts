@@ -161,7 +161,6 @@ export async function parseLabFile(file: File): Promise<{
   status: string;
   lab_count: number;
   labs: Record<string, number>;
-  labs_percentile_vector: Record<string, number>;
 }> {
   const form = new FormData();
   form.append('file', file);
@@ -228,7 +227,7 @@ export async function fetchCaseDetailWithTimeout(
 
   try {
     const res = await fetch(`${API_BASE}/api/cases/${caseId}`, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -265,17 +264,56 @@ export function flagCaseCritical(
   });
 }
 
+/** POST /api/cases/{id}/request-reanalysis — ward doctor pings the radiologist */
+export function requestReanalysis(
+  caseId: string,
+  note?: string,
+): Promise<{ status: string; case_id: string; message_id: string }> {
+  return request(`/api/cases/${caseId}/request-reanalysis`, {
+    method: 'POST',
+    body: JSON.stringify({ note: note ?? '' }),
+  });
+}
+
 /** PATCH /api/cases/{id}/complete — mark a case as discharged */
 export async function completeCase(caseId: string): Promise<{ status: string; case_id: string; discharged_at: string }> {
   return request(`/api/cases/${caseId}/complete`, { method: 'PATCH' });
 }
 
-/** GET /api/cases/{id}/similar — fetch similar cases via FAISS */
+/** Result of /similar — neighbours plus modality metadata from response headers. */
+export interface SimilarCasesResult {
+  cases: CaseSummary[];
+  modality: 'symile' | 'densenet' | 'unknown';
+  indexSize: number;
+}
+
+/** GET /api/cases/{id}/similar — fetch similar cases via FAISS, with modality info. */
 export async function fetchSimilarCases(
   caseId: string,
-  topK: number = 3
-): Promise<CaseSummary[]> {
-  return request<CaseSummary[]>(`/api/cases/${caseId}/similar?top_k=${topK}`);
+  topK: number = 3,
+  modality: 'auto' | 'symile' | 'densenet' = 'auto',
+): Promise<SimilarCasesResult> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/cases/${caseId}/similar?top_k=${topK}&modality=${modality}`,
+      { headers: { 'Content-Type': 'application/json', ...authHeaders() } },
+    );
+  } catch {
+    throw new ApiError('Unable to reach the backend server.', 0);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new ApiError(body || `Request failed with status ${res.status}`, res.status);
+  }
+  const cases = (await res.json()) as CaseSummary[];
+  const m = (res.headers.get('x-similarity-modality') || '').toLowerCase();
+  const sizeStr = res.headers.get('x-similarity-index-size') || '0';
+  return {
+    cases,
+    modality: m === 'symile' ? 'symile' : m === 'densenet' ? 'densenet' : 'unknown',
+    indexSize: Number.parseInt(sizeStr, 10) || 0,
+  };
 }
 
 /** GET /api/cases/{id} — full multimodal detail (alias used by BeforeAfterTab) */
@@ -298,17 +336,6 @@ export async function uploadCXR(caseId: string, file: File): Promise<CaseDetail>
     throw new ApiError(body || `Request failed with status ${res.status}`, res.status);
   }
   return res.json() as Promise<CaseDetail>;
-}
-
-/** POST /api/cases/{id}/upload/ecg — update ECG data from JSON body */
-export async function uploadECG(
-  caseId: string,
-  ecgData: Record<string, number | string>
-): Promise<CaseDetail> {
-  return request<CaseDetail>(`/api/cases/${caseId}/upload/ecg`, {
-    method: 'POST',
-    body: JSON.stringify(ecgData),
-  });
 }
 
 /** POST /api/cases/{id}/upload/labs — parse and save lab results from file */

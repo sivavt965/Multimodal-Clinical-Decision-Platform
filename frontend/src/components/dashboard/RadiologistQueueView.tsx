@@ -6,7 +6,7 @@ import { useCaseStore } from '@/store/caseStore';
 import { DashboardSkeleton } from '@/components/shared/SkeletonLoaders';
 import { useUserRole } from '@/lib/userRole';
 import {
-  AlertCircle, ShieldCheck, Activity, Clock, ArrowRight, Image as ImageIcon, Inbox,
+  AlertCircle, ShieldCheck, Activity, Clock, ArrowRight, Image as ImageIcon, Inbox, MessageSquare,
 } from 'lucide-react';
 import { CaseSummary } from '@/lib/types';
 import { clsx } from 'clsx';
@@ -69,7 +69,15 @@ function QueueRow({ summary, index }: { summary: CaseSummary; index: number }) {
 
         {/* Patient */}
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-gray-900 text-[15px] leading-tight truncate">{summary.patient_name}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-gray-900 text-[15px] leading-tight truncate">{summary.patient_name}</p>
+            {summary.reanalysis_requested && (
+              <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200 animate-pulseSoft">
+                <MessageSquare className="w-3 h-3" />
+                Reanalysis Requested
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
             <span className="font-mono tracking-wide tabular-nums">{summary.mrn}</span>
             <span className="w-px h-3 bg-gray-200" />

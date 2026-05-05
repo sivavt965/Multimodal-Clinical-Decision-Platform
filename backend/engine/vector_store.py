@@ -5,11 +5,29 @@
 """
 Architecture
 ------------
-One singleton VectorStore holds:
+A VectorStore holds:
   - A FAISS IndexFlatL2 (exact L2 nearest-neighbour, no training required).
   - A parallel list `_id_map` that maps integer FAISS row-indices → case UUIDs.
 
-Embeddings are 1024-dimensional L2-normalised GAP vectors from DenseNet121.
+The platform supports **two distinct embedding spaces**, each with its own
+VectorStore instance and on-disk index file. They must never be merged because
+their dimensionalities and semantics are different:
+
+  * DenseNet (current)  : 1024-d L2-normalised GAP vectors from DenseNet121.
+                          Captures CXR-only features.
+                          File: faiss_index.bin (legacy default name).
+
+  * Symile               : 24576-d multimodal embeddings produced by the
+                          Symile-MIMIC contrastive checkpoint
+                          (symile_mimic_model.ckpt). The vector is the
+                          concatenation of three 8192-d per-modality reps
+                          (CXR + ECG + Labs), L2-normalised.
+                          File: faiss_symile_index.bin.
+                          Producer: engine.symile_encoder.run_symile_inference.
+
+Use `VectorStore.for_model("densenet")` or `for_model("symile")` to get the
+right singleton. The bare `VectorStore()` constructor keeps backward
+compatibility with the existing DenseNet index.
 
 Thread safety
 -------------
@@ -27,6 +45,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -37,13 +56,31 @@ from sklearn.preprocessing import normalize
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Dimension constant — must match the DenseNet121 GAP output (1024-d)
+# Per-model embedding dimensions — DO NOT mix these in one index.
 # ---------------------------------------------------------------------------
-EMBEDDING_DIM: int = 1024
+DENSENET_EMBEDDING_DIM: int = 1024  # DenseNet121 GAP (current production path)
+# Symile checkpoint uses d=8192 per modality (CXR/ECG/Labs all project to 8192).
+# We concatenate the three reps for retrieval, so the indexed vector is 3*d.
+SYMILE_PER_MODALITY_DIM: int = 8192
+SYMILE_EMBEDDING_DIM:    int = SYMILE_PER_MODALITY_DIM * 3   # 24576
 
-# Default path for persisting the FAISS index between restarts
-_DEFAULT_INDEX_PATH = Path(__file__).resolve().parent.parent / "faiss_index.bin"
-_DEFAULT_MAP_PATH   = Path(__file__).resolve().parent.parent / "faiss_id_map.npy"
+# Backward-compat alias — existing callers reference EMBEDDING_DIM and assume
+# DenseNet. Keep this until they migrate to the model-specific names.
+EMBEDDING_DIM: int = DENSENET_EMBEDDING_DIM
+
+# Per-model index file paths
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_INDEX_FILES = {
+    "densenet": (_BACKEND_DIR / "faiss_index.bin",        _BACKEND_DIR / "faiss_id_map.npy"),
+    "symile":   (_BACKEND_DIR / "faiss_symile_index.bin", _BACKEND_DIR / "faiss_symile_id_map.npy"),
+}
+_MODEL_DIMS = {
+    "densenet": DENSENET_EMBEDDING_DIM,
+    "symile":   SYMILE_EMBEDDING_DIM,
+}
+
+# Legacy defaults still pointing at DenseNet for back-compat
+_DEFAULT_INDEX_PATH, _DEFAULT_MAP_PATH = _INDEX_FILES["densenet"]
 
 
 # ---------------------------------------------------------------------------
@@ -51,19 +88,41 @@ _DEFAULT_MAP_PATH   = Path(__file__).resolve().parent.parent / "faiss_id_map.npy
 # ---------------------------------------------------------------------------
 
 class VectorStore:
-    """Thread-safe singleton FAISS L2 index keyed by case UUID."""
+    """Thread-safe per-model FAISS L2 index keyed by case UUID.
 
-    _instance: "VectorStore | None" = None
-    _class_lock: threading.Lock = threading.Lock()
+    One instance per embedding model — DenseNet (1024-d) and Symile (24576-d)
+    are kept separate because their distance metrics aren't comparable.
+    """
 
-    def __new__(cls) -> "VectorStore":
-        if cls._instance is None:
+    _instances: dict[str, "VectorStore"] = {}
+    # Reentrant: for_model() holds the lock and calls __init__() which would
+    # otherwise deadlock on a plain Lock when re-acquiring.
+    _class_lock: threading.RLock = threading.RLock()
+
+    @classmethod
+    def for_model(cls, model_name: str) -> "VectorStore":
+        """Return the singleton VectorStore for the named embedding model."""
+        if model_name not in _MODEL_DIMS:
+            raise ValueError(
+                f"Unknown embedding model '{model_name}'. "
+                f"Known: {sorted(_MODEL_DIMS.keys())}"
+            )
+        if model_name not in cls._instances:
             with cls._class_lock:
-                if cls._instance is None:
+                if model_name not in cls._instances:
                     inst = super().__new__(cls)
                     inst._initialized = False
-                    cls._instance = inst
-        return cls._instance
+                    inst._model_name = model_name
+                    # __init__ doesn't auto-fire when we create instances
+                    # via super().__new__; do it explicitly so _dim/_index
+                    # are set before the first method call.
+                    inst.__init__()
+                    cls._instances[model_name] = inst
+        return cls._instances[model_name]
+
+    def __new__(cls) -> "VectorStore":
+        # Backward-compat: bare VectorStore() returns the DenseNet singleton.
+        return cls.for_model("densenet")
 
     def __init__(self) -> None:
         if self._initialized:  # type: ignore[attr-defined]
@@ -71,12 +130,21 @@ class VectorStore:
         with VectorStore._class_lock:
             if self._initialized:
                 return
-            self._index: faiss.IndexFlatL2 = faiss.IndexFlatL2(EMBEDDING_DIM)
+            # _model_name is set by for_model() before __init__ runs
+            name = getattr(self, "_model_name", "densenet")
+            dim = _MODEL_DIMS[name]
+            self._dim: int = dim
+            self._index: faiss.IndexFlatL2 = faiss.IndexFlatL2(dim)
             self._id_map: List[str] = []          # row-index → case_id
             self._op_lock = threading.Lock()      # guards writes
+            # Debounced-save bookkeeping: every add_to_index() flips _dirty,
+            # and save_if_needed() throttles disk writes to once per interval.
+            self._dirty: bool = False
+            self._last_save_ts: float = 0.0
             self._initialized = True
             logger.info(
-                "[VectorStore] Initialised FAISS IndexFlatL2 (dim=%d)", EMBEDDING_DIM
+                "[VectorStore] Initialised FAISS IndexFlatL2 model=%s dim=%d",
+                name, dim,
             )
 
     # ------------------------------------------------------------------
@@ -99,26 +167,28 @@ class VectorStore:
         embedding : Raw numpy array of shape (1024,) or (1, 1024).
                     Will be L2-normalised internally.
         """
-        vec = _coerce_embedding(embedding)          # → (1, 1024) float32
-        vec = normalize(vec, norm="l2")             # unit sphere
+        vec = _coerce_embedding(embedding, self._dim)  # → (1, dim) float32
+        vec = normalize(vec, norm="l2")                # unit sphere
 
         with self._op_lock:
             # Remove existing entry for this case_id to avoid duplicates on reinfer
             if case_id in self._id_map:
                 old_row = self._id_map.index(case_id)
                 self._id_map.pop(old_row)
-                # Rebuild index without the old vector — reconstruct all other vectors
-                all_vecs = np.vstack([
+                # Rebuild index without the old vector — reconstruct all other vectors.
+                # np.vstack([]) raises, so handle the "old vector was the only one" case.
+                kept = [
                     self._index.reconstruct(i)
                     for i in range(self._index.ntotal)
                     if i != old_row
-                ])
+                ]
                 self._index.reset()
-                if len(all_vecs) > 0:
-                    self._index.add(all_vecs)       # type: ignore[arg-type]
+                if kept:
+                    self._index.add(np.vstack(kept))  # type: ignore[arg-type]
 
             self._index.add(vec)                    # type: ignore[arg-type]
             self._id_map.append(case_id)
+            self._dirty = True
 
         logger.info(
             "[VectorStore] Updated case %s (index size now %d)", case_id, self.size
@@ -145,25 +215,27 @@ class VectorStore:
         List of dicts: [{"case_id": str, "distance": float, "rank": int}, ...]
         sorted ascending by distance (most similar first).
         """
-        if self._index.ntotal == 0:
-            logger.warning("[VectorStore] Index is empty — returning no results.")
-            return []
-
-        vec = _coerce_embedding(query_embedding)
+        vec = _coerce_embedding(query_embedding, self._dim)
         vec = normalize(vec, norm="l2")
 
-        # Retrieve extra candidates to allow filtering of the excluded case
-        k = min(top_k + (1 if exclude_case_id else 0), self._index.ntotal)
+        # FAISS objects are not thread-safe; hold the same lock writers do
+        # so a concurrent add_to_index reset/rebuild can't return mid-state rows.
+        with self._op_lock:
+            if self._index.ntotal == 0:
+                logger.warning("[VectorStore] Index is empty — returning no results.")
+                return []
 
-        distances, indices = self._index.search(vec, k)  # type: ignore[arg-type]
+            k = min(top_k + (1 if exclude_case_id else 0), self._index.ntotal)
+            distances, indices = self._index.search(vec, k)  # type: ignore[arg-type]
+            id_map_snapshot = list(self._id_map)
 
         results: List[dict] = []
         for rank, (dist, idx) in enumerate(
             zip(distances[0].tolist(), indices[0].tolist()), start=1
         ):
-            if idx < 0 or idx >= len(self._id_map):
+            if idx < 0 or idx >= len(id_map_snapshot):
                 continue
-            cid = self._id_map[idx]
+            cid = id_map_snapshot[idx]
             if cid == exclude_case_id:
                 continue
             results.append({"case_id": cid, "distance": float(dist), "rank": rank})
@@ -197,7 +269,7 @@ class VectorStore:
                 row = self._id_map.index(case_id)
             except ValueError:
                 return None
-            vec = np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
+            vec = np.zeros((1, self._dim), dtype=np.float32)
             self._index.reconstruct(row, vec[0])   # type: ignore[attr-defined]
             return vec
 
@@ -205,27 +277,74 @@ class VectorStore:
     # Persistence helpers
     # ------------------------------------------------------------------
 
+    def _default_paths(self) -> tuple[Path, Path]:
+        """Per-model default index + id-map file paths."""
+        return _INDEX_FILES[self._model_name]
+
     def save(
         self,
-        index_path: Path = _DEFAULT_INDEX_PATH,
-        map_path: Path = _DEFAULT_MAP_PATH,
+        index_path: Optional[Path] = None,
+        map_path: Optional[Path] = None,
     ) -> None:
-        """Persist the FAISS index and ID map to disk."""
-        faiss.write_index(self._index, str(index_path))
-        np.save(str(map_path), np.array(self._id_map))
+        """Persist the FAISS index and ID map to disk (per-model path by default)."""
+        ip_default, mp_default = self._default_paths()
+        index_path = index_path or ip_default
+        map_path   = map_path or mp_default
+        with self._op_lock:
+            faiss.write_index(self._index, str(index_path))
+            np.save(str(map_path), np.array(self._id_map))
+            self._dirty = False
+            self._last_save_ts = time.monotonic()
         logger.info("[VectorStore] Saved index (%d vectors) → %s", self.size, index_path)
+
+    # Default debounce window for save_if_needed() — saves at most once per
+    # this many seconds when called from the per-case API path.
+    _DEFAULT_SAVE_DEBOUNCE_SEC: float = 30.0
+
+    def save_if_needed(
+        self,
+        min_interval_sec: float = _DEFAULT_SAVE_DEBOUNCE_SEC,
+        force: bool = False,
+    ) -> bool:
+        """
+        Persist the index ONLY if there are unsaved changes AND enough time has
+        elapsed since the last save (or force=True).
+
+        Cheap to call repeatedly from the inference hot-path — does no disk I/O
+        when the index is clean or the debounce window hasn't elapsed.
+
+        Returns True if a save actually happened, False otherwise.
+        """
+        if not self._dirty:
+            return False
+        if not force and (time.monotonic() - self._last_save_ts) < min_interval_sec:
+            return False
+        self.save()
+        return True
 
     def load(
         self,
-        index_path: Path = _DEFAULT_INDEX_PATH,
-        map_path: Path = _DEFAULT_MAP_PATH,
+        index_path: Optional[Path] = None,
+        map_path: Optional[Path] = None,
     ) -> None:
-        """Restore the FAISS index and ID map from disk."""
+        """Restore the FAISS index and ID map from disk (per-model path by default)."""
+        ip_default, mp_default = self._default_paths()
+        index_path = index_path or ip_default
+        map_path   = map_path or mp_default
         if not index_path.exists() or not map_path.exists():
             logger.warning("[VectorStore] No persisted index found at %s", index_path)
             return
         with self._op_lock:
-            self._index = faiss.read_index(str(index_path))
+            loaded_index = faiss.read_index(str(index_path))
+            if loaded_index.d != self._dim:
+                # Loading a 1024-d file into the 448-d singleton (or vice-versa)
+                # would silently break every subsequent add_to_index. Refuse it.
+                raise ValueError(
+                    f"[VectorStore] Refusing to load index with dim={loaded_index.d} "
+                    f"into '{self._model_name}' store (expected dim={self._dim}). "
+                    f"File: {index_path}"
+                )
+            self._index = loaded_index
             self._id_map = np.load(str(map_path), allow_pickle=True).tolist()
         logger.info("[VectorStore] Loaded index (%d vectors) from %s", self.size, index_path)
 
@@ -234,14 +353,14 @@ class VectorStore:
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
-def _coerce_embedding(arr: np.ndarray) -> np.ndarray:
-    """Ensure the array is shape (1, EMBEDDING_DIM) float32."""
+def _coerce_embedding(arr: np.ndarray, dim: int = DENSENET_EMBEDDING_DIM) -> np.ndarray:
+    """Ensure the array is shape (1, dim) float32. Default dim = DenseNet."""
     arr = np.asarray(arr, dtype=np.float32)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)
-    if arr.shape != (1, EMBEDDING_DIM):
+    if arr.shape != (1, dim):
         raise ValueError(
-            f"Expected embedding of shape ({EMBEDDING_DIM},) or (1, {EMBEDDING_DIM}), "
+            f"Expected embedding of shape ({dim},) or (1, {dim}), "
             f"got {arr.shape}"
         )
     return arr

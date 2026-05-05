@@ -43,8 +43,8 @@ const TABS: TabDef[] = [
   },
   { id: 'cxr-analysis',  label: 'CXR Analysis',      icon: ImageIcon,             roles: ['ward_doctor', 'radiologist'] },
   { id: 'ecg-input',     label: 'ECG Input',         icon: HeartPulse,            roles: ['ward_doctor'] },
-  { id: 'similar-cases', label: 'Similar Cases',     icon: Copy,                  roles: ['ward_doctor'] },
-  { id: 'before-after',  label: 'Before vs. After',  icon: SplitSquareHorizontal, roles: ['ward_doctor'] },
+  { id: 'similar-cases', label: 'Similar Cases',     icon: Copy,                  roles: ['ward_doctor', 'radiologist'] },
+  { id: 'before-after',  label: 'Before vs. After',  icon: SplitSquareHorizontal, roles: ['ward_doctor', 'radiologist'] },
 ];
 
 export function CaseTabs() {

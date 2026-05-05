@@ -124,10 +124,11 @@ export function UploadModal({ type, caseId, onClose }: UploadModalProps) {
             body: JSON.stringify(body),
           });
         } else {
-          if (!file) { setErrorMsg('Please select a file.'); setStatus('idle'); return; }
-          const form = new FormData();
-          form.append('file', file);
-          res = await fetch(`${API_BASE}/api/cases/${caseId}/upload/ecg-file`, { method: 'POST', body: form });
+          // ECG file upload endpoint is not implemented on the backend yet.
+          // The "Upload File" toggle is disabled in the UI; this branch is a guard.
+          setErrorMsg('ECG file upload not supported yet — please use Manual Entry.');
+          setStatus('idle');
+          return;
         }
 
       } else {
@@ -200,11 +201,11 @@ export function UploadModal({ type, caseId, onClose }: UploadModalProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setEcgMode('file')}
-                className={cn("flex-1 py-1.5 rounded-md text-xs font-semibold transition-all",
-                  ecgMode === 'file' ? "bg-white text-gray-800 shadow-sm" : "text-gray-500")}
+                disabled
+                title="ECG file upload not yet supported — use Manual Entry"
+                className="flex-1 py-1.5 rounded-md text-xs font-semibold text-gray-400 cursor-not-allowed"
               >
-                Upload File
+                Upload File · soon
               </button>
             </div>
           )}

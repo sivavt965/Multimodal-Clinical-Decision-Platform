@@ -2,7 +2,7 @@
 # schemas.py — Pydantic models for the Clinical Decision Support Platform
 # Mirrors frontend/src/lib/types.ts exactly.
 # =============================================================================
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import List, Optional, Literal, Dict, Union
 
 # ---------------------------------------------------------------------------
@@ -96,12 +96,34 @@ class FindingFlag(BaseModel):
 
 
 class ConsultationMessage(BaseModel):
+    """Consultation thread message.
+
+    Tolerates legacy rows (e.g. reanalysis messages historically written with
+    `body`/`created_at` instead of `content`/`sent_at`) via a pre-validator
+    that maps old field names onto canonical ones. Extras like `kind` and
+    `user_id` are preserved by the JSONB column but ignored at validation.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
     id: str
-    role: ConsultationRole
-    type: MessageType
-    content: Union[str, AnnotationMark, ViewportState, FindingFlag]
-    sent_at: str  # ISO 8601
-    read: bool
+    role: ConsultationRole = "ward_doctor"
+    type: MessageType = "text"
+    content: Union[str, AnnotationMark, ViewportState, FindingFlag, None] = None
+    sent_at: str = ""  # ISO 8601
+    read: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        # Legacy reanalysis-request messages carried `body` + `created_at`.
+        if "content" not in data and "body" in data:
+            data["content"] = data["body"]
+        if (not data.get("sent_at")) and data.get("created_at"):
+            data["sent_at"] = data["created_at"]
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -215,8 +237,13 @@ class CaseSummary(BaseModel):
     top_finding_probability: Optional[float] = None
     consultation_open: bool = False
     urgency_flag: bool = False
+    reanalysis_requested: bool = False
     similarity_score: Optional[float] = None
     cxr_dicom_url: Optional[str] = None
+    # Expert-annotated CheXpert labels from the bundled Symile-MIMIC CSV.
+    # A real CXR case usually has several positive findings; the similar-cases
+    # card shows these instead of just argmax(prediction).
+    ground_truth_findings: List[str] = []
 
 
 # ---------------------------------------------------------------------------

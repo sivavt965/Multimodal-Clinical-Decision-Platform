@@ -10,6 +10,7 @@ import {
 import { CaseDetail } from '@/lib/types';
 import { useCaseStore } from '@/store/caseStore';
 import { UploadModal } from '@/components/case/UploadModal';
+import { useUserRole } from '@/lib/userRole';
 
 interface WorkspaceHeaderProps {
   caseDetail: CaseDetail;
@@ -46,6 +47,15 @@ export function WorkspaceHeader({ caseDetail }: WorkspaceHeaderProps) {
   const [isCompleting,  setIsCompleting]  = useState(false);
   const [isRerunning,   setIsRerunning]   = useState(false);
   const [uploadModal,   setUploadModal]   = useState<'cxr' | 'ecg' | 'labs' | null>(null);
+
+  // Role gating per architecture spec:
+  //   ward_doctor  : owns the clinical decision — completes cases, deletes
+  //   radiologist  : can re-run inference (delegates Complete Case to ward)
+  //   clinical_admin / system_admin : no clinical actions on case detail
+  const { role } = useUserRole();
+  const canComplete = role === 'ward_doctor';
+  const canDelete   = role === 'ward_doctor';
+  const canRerun    = role === 'ward_doctor' || role === 'radiologist';
 
   const isDischarged   = !!caseDetail.case.discharged_at;
   const hasPredictions = predictions?.some(p => p.probability > 0);
@@ -147,7 +157,7 @@ export function WorkspaceHeader({ caseDetail }: WorkspaceHeaderProps) {
           {/* Right: action buttons */}
           <div className="flex items-center gap-2 flex-wrap ml-12 lg:ml-0">
 
-            {!isDischarged && (
+            {!isDischarged && canRerun && (
               <button
                 onClick={handleRerun}
                 disabled={isRerunning}
@@ -179,7 +189,7 @@ export function WorkspaceHeader({ caseDetail }: WorkspaceHeaderProps) {
               )}
             </button>
 
-            {!isDischarged && (
+            {!isDischarged && canComplete && (
               <button
                 onClick={handleComplete}
                 disabled={isCompleting}
@@ -192,15 +202,17 @@ export function WorkspaceHeader({ caseDetail }: WorkspaceHeaderProps) {
               </button>
             )}
 
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50
-                         border border-transparent hover:border-red-200
-                         transition-all duration-150"
-              title="Remove case"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {canDelete && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50
+                           border border-transparent hover:border-red-200
+                           transition-all duration-150"
+                title="Remove case"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
