@@ -106,20 +106,28 @@ def get_actor(request: Request) -> dict:
 
     Preference order:
       1. Bearer JWT → verified via Supabase → email → users table lookup
-      2. X-User-Id + X-User-Role dev shim (no Bearer token present)
+      2. X-User-Id + X-User-Role dev shim — ONLY when no Bearer token is
+         present at all. If a Bearer token is supplied but invalid or its
+         email isn't in our users table, we return an empty actor and do
+         NOT fall through to the shim. Otherwise an attacker could attach
+         any expired/fake token alongside spoofed X-User-Role headers and
+         escalate via the shim.
     """
     token = _bearer_token(request)
     if token:
         email = _verify_token_via_supabase(token)
-        if email:
-            result = _lookup_by_email(email)
-            if result:
-                app_user_id, role = result
-                return {"user_id": app_user_id, "user_role": role}
-            # Authenticated but no matching users row — no role granted.
+        if not email:
+            # Token present but invalid/expired/unverifiable — reject.
+            # Do not honour the dev shim when a token was attempted.
             return {"user_id": None, "user_role": None}
+        result = _lookup_by_email(email)
+        if not result:
+            # Authenticated identity, but no matching active users row.
+            return {"user_id": None, "user_role": None}
+        app_user_id, role = result
+        return {"user_id": app_user_id, "user_role": role}
 
-    # Fallback: dev header shim
+    # No Bearer token at all → dev header shim (local dev only).
     return {
         "user_id":   request.headers.get("X-User-Id") or None,
         "user_role": request.headers.get("X-User-Role") or None,

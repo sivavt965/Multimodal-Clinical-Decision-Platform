@@ -471,7 +471,7 @@ export default function AdminPage() {
                 ) : loginHistory.map((record, idx) => {
                   const isCurrentSession = record.id === sessionStorage.getItem('session_id');
                   const loginDate = new Date(record.loginAt);
-                  const duration = isCurrentSession
+                  const duration = isCurrentSession && now
                     ? formatDuration(now.getTime() - loginDate.getTime())
                     : record.durationMs !== null
                       ? formatDuration(record.durationMs)
