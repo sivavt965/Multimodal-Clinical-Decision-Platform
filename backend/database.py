@@ -458,38 +458,19 @@ def append_consultation_message(
         _save_local_db(data)
         return cons
 
-    # Fetch existing consultation
-    cons_resp = (
-        db.table("consultations")
-        .select("*")
-        .eq("case_id", case_id)
-        .maybe_single()
-        .execute()
-    )
+    # Atomic append via Postgres RPC (see supabase_schema/004_*.sql).
+    # Replaces the previous read-modify-write which lost messages under
+    # concurrent appends from the ward doctor + radiologist.
+    resp = db.rpc(
+        "append_consultation_message",
+        {"p_case_id": case_id, "p_message": message},
+    ).execute()
 
-    if cons_resp.data:
-        existing_msgs: List = cons_resp.data.get("messages", []) or []
-        existing_msgs.append(message)
-        updated = (
-            db.table("consultations")
-            .update({"messages": existing_msgs, "updated_at": now})
-            .eq("case_id", case_id)
-            .execute()
-        )
-        return updated.data[0]
-    else:
-        new_cons = {
-            "id": f"cons-{uuid.uuid4().hex[:12]}",
-            "case_id": case_id,
-            "ward_doctor_id": "00000000-0000-0000-0000-000000000000", # Placeholder UUID
-            "is_open": True,
-            "opened_at": now,
-            "messages": [message],
-            "created_at": now,
-            "updated_at": now,
-        }
-        inserted = db.table("consultations").insert(new_cons).execute()
-        return inserted.data[0]
+    # rpc() returning a composite row gives back a single dict (not a list).
+    data = resp.data
+    if isinstance(data, list):
+        return data[0] if data else {}
+    return data or {}
 
 
 # ---------------------------------------------------------------------------
