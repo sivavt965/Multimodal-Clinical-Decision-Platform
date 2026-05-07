@@ -52,12 +52,10 @@ function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
-const MOCK_USER_ID = 'usr_admin_001';
-const MOCK_USER_NAME = 'Dr. Admin (Demo)';
 
 export default function AdminPage() {
   const router = useRouter();
-  const { role, hydrated } = useUserRole();
+  const { role, hydrated, user } = useUserRole();
 
   const [health, setHealth] = useState<HealthData | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>([]);
@@ -72,6 +70,8 @@ export default function AdminPage() {
 
   // Phase 4d: User Management + Audit Log state
   const [users, setUsers] = useState<PlatformUser[]>([]);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditFilter, setAuditFilter] = useState<{ action: string; userId: string }>({ action: '', userId: '' });
@@ -83,7 +83,12 @@ export default function AdminPage() {
   const [addError, setAddError] = useState<string | null>(null);
 
   const refreshUsers = async () => {
-    try { setUsers(await listUsers()); } catch {}
+    try {
+      setUsersError(null);
+      setUsers(await listUsers());
+    } catch (err: any) {
+      setUsersError(err?.message || 'Failed to load users');
+    }
   };
 
   const handleAddUser = async () => {
@@ -158,18 +163,23 @@ export default function AdminPage() {
 
   // User Management — load users on mount
   useEffect(() => {
-    listUsers().then(setUsers).catch(() => {});
+    listUsers().then(setUsers).catch((err: any) => {
+      setUsersError(err?.message || 'Failed to load users');
+    });
   }, []);
 
   // Audit Log — refetch when filter changes
   useEffect(() => {
+    setAuditError(null);
     listAuditLog({
       limit: 100,
       action: auditFilter.action || undefined,
       userId: auditFilter.userId || undefined,
     })
       .then((r) => { setAuditEntries(r.items); setAuditTotal(r.total); })
-      .catch(() => {});
+      .catch((err: any) => {
+        setAuditError(err?.message || 'Failed to load audit log');
+      });
   }, [auditFilter]);
 
   // Session tracking
@@ -189,7 +199,7 @@ export default function AdminPage() {
       const history: SessionRecord[] = historyRaw ? JSON.parse(historyRaw) : [];
       const newRecord: SessionRecord = {
         id: newId,
-        userId: MOCK_USER_ID,
+        userId: user.id,
         loginAt: now.toISOString(),
         durationMs: null,
       };
@@ -446,8 +456,8 @@ export default function AdminPage() {
               <div className="flex-1 grid grid-cols-3 gap-4">
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">User ID</p>
-                  <p className="text-sm font-bold text-slate-900 font-mono">{MOCK_USER_ID}</p>
-                  <p className="text-xs text-slate-500">{MOCK_USER_NAME}</p>
+                  <p className="text-sm font-bold text-slate-900 font-mono">{user.id}</p>
+                  <p className="text-xs text-slate-500">{user.full_name}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Login Time</p>
@@ -502,7 +512,7 @@ export default function AdminPage() {
                       style={{ animationDelay: `${idx * 30}ms`, animationFillMode: 'both' }}
                     >
                       <td className="px-6 py-3 text-xs font-mono text-slate-500">{record.id}</td>
-                      <td className="px-6 py-3 text-sm font-semibold text-slate-800">{MOCK_USER_NAME}</td>
+                      <td className="px-6 py-3 text-sm font-semibold text-slate-800">{user.full_name}</td>
                       <td className="px-6 py-3 text-sm text-slate-600">
                         {loginDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         <span className="ml-1.5 text-xs text-slate-400">{loginDate.toLocaleDateString()}</span>

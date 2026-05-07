@@ -1,20 +1,43 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, Lock, User, ActivitySquare } from 'lucide-react';
+import { ShieldCheck, Lock, User, ActivitySquare, AlertCircle } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { session, loading } = useAuth();
+  const [email, setEmail] = useState('dr.smith@hospital.org');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Already signed in — go straight to dashboard.
+  useEffect(() => {
+    if (!loading && session) {
+      router.replace('/dashboard');
+    }
+  }, [session, loading, router]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate auth delay
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 800);
+    setError(null);
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    router.replace('/dashboard');
   };
 
   return (
@@ -42,6 +65,13 @@ export default function LoginPage() {
           <h2 className="text-xl font-bold text-slate-800 mb-1">Staff Portal Login</h2>
           <p className="text-xs text-slate-500 mb-6">Sign in with your hospital credentials to continue.</p>
 
+          {error && (
+            <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Staff ID / Email</label>
@@ -50,11 +80,12 @@ export default function LoginPage() {
                   <User className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                 </div>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  defaultValue="dr.smith@hospital.org"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all sm:text-sm"
-                  placeholder="Enter your Staff ID"
+                  placeholder="you@hospital.org"
                 />
               </div>
             </div>
@@ -68,7 +99,8 @@ export default function LoginPage() {
                 <input
                   type="password"
                   required
-                  defaultValue="password123"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all sm:text-sm"
                   placeholder="••••••••"
                 />

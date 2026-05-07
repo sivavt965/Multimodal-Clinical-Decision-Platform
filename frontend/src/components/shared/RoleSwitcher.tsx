@@ -18,14 +18,36 @@ const ROLE_ICON: Record<UserRole, React.ComponentType<{ className?: string }>> =
   system_admin:   ShieldAlert,
 };
 
+const ROLE_COLOR: Record<UserRole, string> = {
+  radiologist:    'text-blue-600 bg-blue-50 border-blue-200',
+  ward_doctor:    'text-emerald-600 bg-emerald-50 border-emerald-200',
+  clinical_admin: 'text-violet-600 bg-violet-50 border-violet-200',
+  system_admin:   'text-rose-600 bg-rose-50 border-rose-200',
+};
+
 const ROLES: UserRole[] = ['ward_doctor', 'radiologist', 'clinical_admin', 'system_admin'];
 
+/** Static chip shown when the user is authenticated via real Supabase session. */
+function UserChip({ role, name }: { role: UserRole; name: string }) {
+  const Icon = ROLE_ICON[role];
+  return (
+    <div className={cn(
+      "px-3 py-1.5 rounded-lg flex items-center gap-2 border text-sm font-medium select-none",
+      ROLE_COLOR[role],
+    )}>
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="hidden sm:inline">{name}</span>
+      <span className="hidden sm:inline text-[11px] font-normal opacity-60">· {ROLE_LABELS[role]}</span>
+    </div>
+  );
+}
+
+/** Dev-only dropdown — only rendered when no real session is active. */
 export function RoleSwitcher() {
-  const { role, user, setRole, hydrated } = useUserRole();
+  const { role, user, setRole, hydrated, isRealSession } = useUserRole();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -35,7 +57,6 @@ export function RoleSwitcher() {
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
 
-  // Pre-hydration: render a placeholder so SSR markup matches the default role
   if (!hydrated) {
     return (
       <div className="px-3 py-2 text-sm font-medium text-slate-400 rounded-lg flex items-center gap-2 border border-slate-200 bg-white">
@@ -45,8 +66,13 @@ export function RoleSwitcher() {
     );
   }
 
-  const Icon = ROLE_ICON[role];
+  // Real session — show static identity chip, no switcher.
+  if (isRealSession) {
+    return <UserChip role={role} name={user.full_name} />;
+  }
 
+  // Dev mode — keep the switcher dropdown.
+  const Icon = ROLE_ICON[role];
   return (
     <div ref={ref} className="relative">
       <button
@@ -56,9 +82,7 @@ export function RoleSwitcher() {
           "border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300",
           "transition-all duration-150"
         )}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={`Signed in as ${user.full_name}`}
+        title={`Dev mode — signed in as ${user.full_name}`}
       >
         <Icon className="h-4 w-4 text-blue-600" />
         <span className="hidden sm:inline text-slate-700">{ROLE_LABELS[role]}</span>
@@ -71,8 +95,8 @@ export function RoleSwitcher() {
           className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden animate-fadeInDown z-40"
           role="menu"
         >
-          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/60">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Switch role (dev)</p>
+          <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Dev mode — switch role</p>
           </div>
           <ul className="py-1">
             {ROLES.map((r) => {
@@ -102,11 +126,6 @@ export function RoleSwitcher() {
               );
             })}
           </ul>
-          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/40">
-            <p className="text-[10px] text-slate-400 leading-tight">
-              Dev-only role switch. Replaces with real Supabase Auth in Phase 5.
-            </p>
-          </div>
         </div>
       )}
     </div>

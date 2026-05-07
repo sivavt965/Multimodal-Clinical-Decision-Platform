@@ -19,11 +19,29 @@ export class ApiError extends Error {
  * Throws `ApiError` on non-OK responses or network failures.
  */
 /**
- * Read the active dev role + user_id from localStorage so every API call
- * carries identity headers. Pre-auth shim: replaced by Supabase JWT in Phase 5.
+ * Build auth headers for every API call.
+ *
+ * Phase 5: if a Supabase session exists, send `Authorization: Bearer <jwt>`.
+ * The backend validates the JWT and looks up the role from the users table.
+ *
+ * Fallback (dev shim): X-User-Id + X-User-Role from localStorage, used when
+ * no real session is active (local dev without Supabase auth configured).
  */
-function authHeaders(): Record<string, string> {
+async function authHeaders(): Promise<Record<string, string>> {
   if (typeof window === 'undefined') return {};
+
+  // Try real session first (supabase lazy import to avoid SSR issues).
+  try {
+    const { supabase } = await import('./supabase');
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) {
+      return { Authorization: `Bearer ${data.session.access_token}` };
+    }
+  } catch {
+    // supabase not configured or SSR — fall through to dev shim
+  }
+
+  // Dev shim fallback.
   const role = window.localStorage.getItem('cdss_dev_role') || 'ward_doctor';
   const ID_BY_ROLE: Record<string, string> = {
     radiologist:    '4f9b9bc8-bfd7-4b3f-924a-0dae0c882f90',
@@ -39,9 +57,10 @@ function authHeaders(): Record<string, string> {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let res: Response;
+  const headers = await authHeaders();
   try {
     res = await fetch(`${API_BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...headers },
       ...options,
     });
   } catch {
@@ -116,12 +135,13 @@ export function fetchCaseSummaries(): Promise<CaseSummary[]> {
 /** POST /api/cases — register a new case via multipart form data */
 export async function createCase(data: FormData): Promise<CaseSummary> {
   let res: Response;
+  const headers = await authHeaders();
   try {
     res = await fetch(`${API_BASE}/api/cases`, {
       method: 'POST',
       body: data,
       // Don't set Content-Type — the browser must add the multipart boundary.
-      headers: authHeaders(),
+      headers,
     });
   } catch {
     throw new ApiError('Unable to reach the backend server.', 0);
@@ -225,9 +245,10 @@ export async function fetchCaseDetailWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const headers = await authHeaders();
   try {
     const res = await fetch(`${API_BASE}/api/cases/${caseId}`, {
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...headers },
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -294,10 +315,11 @@ export async function fetchSimilarCases(
   modality: 'auto' | 'symile' | 'densenet' = 'auto',
 ): Promise<SimilarCasesResult> {
   let res: Response;
+  const headers = await authHeaders();
   try {
     res = await fetch(
       `${API_BASE}/api/cases/${caseId}/similar?top_k=${topK}&modality=${modality}`,
-      { headers: { 'Content-Type': 'application/json', ...authHeaders() } },
+      { headers: { 'Content-Type': 'application/json', ...headers } },
     );
   } catch {
     throw new ApiError('Unable to reach the backend server.', 0);
@@ -326,8 +348,9 @@ export async function uploadCXR(caseId: string, file: File): Promise<CaseDetail>
   const form = new FormData();
   form.append('image', file);
   let res: Response;
+  const headers = await authHeaders();
   try {
-    res = await fetch(`${API_BASE}/api/cases/${caseId}/upload/cxr`, { method: 'POST', body: form, headers: authHeaders() });
+    res = await fetch(`${API_BASE}/api/cases/${caseId}/upload/cxr`, { method: 'POST', body: form, headers });
   } catch {
     throw new ApiError('Unable to reach the backend server.', 0);
   }
@@ -343,8 +366,9 @@ export async function uploadLabs(caseId: string, file: File): Promise<CaseDetail
   const form = new FormData();
   form.append('file', file);
   let res: Response;
+  const headers = await authHeaders();
   try {
-    res = await fetch(`${API_BASE}/api/cases/${caseId}/upload/labs`, { method: 'POST', body: form, headers: authHeaders() });
+    res = await fetch(`${API_BASE}/api/cases/${caseId}/upload/labs`, { method: 'POST', body: form, headers });
   } catch {
     throw new ApiError('Unable to reach the backend server.', 0);
   }

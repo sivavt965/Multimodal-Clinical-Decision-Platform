@@ -1107,6 +1107,39 @@ async def admin_audit_log(
     return {"total": resp.count or 0, "items": resp.data or []}
 
 
+@app.get("/api/me")
+async def get_me(request: Request):
+    """Return the authenticated user's profile (id, email, full_name, role).
+
+    Requires a valid Supabase JWT in Authorization: Bearer. Used by the
+    frontend auth context to derive the active role after sign-in.
+    Raises 401 if the token is missing/invalid, 403 if email not in users table.
+    """
+    from auth import _bearer_token, _verify_token_via_supabase, _lookup_by_email
+    token = _bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="No Bearer token provided")
+    email = _verify_token_via_supabase(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    result = _lookup_by_email(email)
+    if not result:
+        raise HTTPException(status_code=403, detail="User not found or inactive")
+    app_user_id, role = result
+    try:
+        db = get_db()
+        resp = db.table("users").select("full_name,email").eq("id", app_user_id).limit(1).execute()
+        row = resp.data[0] if resp.data else {}
+    except Exception:
+        row = {}
+    return {
+        "id": app_user_id,
+        "email": row.get("email", email),
+        "full_name": row.get("full_name", ""),
+        "role": role,
+    }
+
+
 @app.get("/api/health")
 async def health():
     try:

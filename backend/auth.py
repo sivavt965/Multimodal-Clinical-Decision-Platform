@@ -2,69 +2,33 @@
 # auth.py — Identity resolution for the Clinical Decision Support API
 # =============================================================================
 """
-Two-mode actor resolution to support the Phase 5 transition:
+Two-mode actor resolution:
 
-  1. **JWT mode (preferred)** — `Authorization: Bearer <token>` header carries
-     a Supabase-issued JWT. Signature is verified locally with HS256 and the
-     `SUPABASE_JWT_SECRET` env var. The `sub` claim is the auth user id, which
-     matches `users.id` in our application table; the role is looked up from
-     that row (cached for `_ROLE_CACHE_TTL_SEC` seconds).
+  1. **JWT mode (preferred)** — `Authorization: Bearer <token>` carries a
+     Supabase-issued JWT. Verification is delegated to Supabase via
+     `auth.get_user(token)` so it works with both legacy HS256 and the
+     current ECC P-256 signing key — no SUPABASE_JWT_SECRET needed.
+     The returned email bridges to our `users` table (since auth.uid()
+     differs from our seeded users.id UUIDs). Role is cached for 60s.
 
-  2. **Header shim (fallback)** — `X-User-Id` + `X-User-Role` headers, set by
-     the frontend's pre-auth dev role-switcher. Used when no Bearer token is
-     present, or when `SUPABASE_JWT_SECRET` is not configured. This lets us
-     ship 5b before 5c (frontend) is wired up.
-
-Once the frontend always sends Bearer tokens, the header shim can be removed.
+  2. **Header shim (fallback)** — `X-User-Id` + `X-User-Role` headers, set
+     by the frontend dev role-switcher when no Bearer token is present.
+     Kept for local dev so the site works without a live Supabase session.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Optional
 
-import jwt
 from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
-_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
-_JWT_AUDIENCE: str = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
-_JWT_ALGOS = ["HS256"]
-
-if not _JWT_SECRET:
-    logger.warning(
-        "[auth] SUPABASE_JWT_SECRET not set — JWT verification disabled, "
-        "falling back to X-User-Id / X-User-Role header shim. "
-        "Set SUPABASE_JWT_SECRET in backend/.env to enable real auth."
-    )
-
-# Per-request role cache to avoid hitting the users table on every audited
-# call. TTL is short (60s) so role/status changes propagate quickly.
-_ROLE_CACHE: dict[str, tuple[str, float]] = {}  # user_id -> (role, expires_at)
+# email -> (app_user_id, role, expires_at)
+_ROLE_CACHE: dict[str, tuple[str, str, float]] = {}
 _ROLE_CACHE_TTL_SEC = 60.0
-
-
-def _verify_jwt(token: str) -> Optional[dict]:
-    """Verify a Supabase HS256 JWT. Returns the claims dict, or None on failure."""
-    if not _JWT_SECRET:
-        return None
-    try:
-        return jwt.decode(
-            token,
-            _JWT_SECRET,
-            algorithms=_JWT_ALGOS,
-            audience=_JWT_AUDIENCE,
-            options={"require": ["exp", "sub"]},
-        )
-    except jwt.ExpiredSignatureError:
-        logger.info("[auth] Rejected expired JWT")
-        return None
-    except jwt.InvalidTokenError as exc:
-        logger.info("[auth] Rejected invalid JWT: %s", exc)
-        return None
 
 
 def _bearer_token(request: Request) -> Optional[str]:
@@ -78,69 +42,82 @@ def _bearer_token(request: Request) -> Optional[str]:
     return parts[1].strip() or None
 
 
-def _lookup_role(user_id: str) -> Optional[str]:
-    """Resolve role for a verified user_id from the users table, with TTL cache."""
-    now = time.monotonic()
-    cached = _ROLE_CACHE.get(user_id)
-    if cached and cached[1] > now:
-        return cached[0]
+def _verify_token_via_supabase(token: str) -> Optional[str]:
+    """Call Supabase to verify the token and return the user's email, or None.
 
-    # Lazy import — avoids pulling database.py at module-load time and keeps
-    # this module testable in isolation.
+    Uses the service-role Supabase client so it can call auth.get_user()
+    regardless of RLS policies. Works with HS256 and ECC P-256 signing keys.
+    """
+    try:
+        from database import get_db
+        db = get_db()
+        if db == "LOCAL_MOCK":
+            return None
+        resp = db.auth.get_user(token)
+        user = resp.user if hasattr(resp, "user") else None
+        if user and user.email:
+            return user.email
+        return None
+    except Exception as exc:
+        logger.info("[auth] Token verification failed: %s", exc)
+        return None
+
+
+def _lookup_by_email(email: str) -> Optional[tuple[str, str]]:
+    """Return (app_user_id, role) from our users table by email, with TTL cache."""
+    now = time.monotonic()
+    cached = _ROLE_CACHE.get(email)
+    if cached and cached[2] > now:
+        return (cached[0], cached[1])
+
     from database import get_db
     db = get_db()
     if db == "LOCAL_MOCK":
-        # Mock mode has no users table; surface an empty role so callers can
-        # decide policy. Header shim still works in this configuration.
         return None
     try:
         resp = (
             db.table("users")
-            .select("role,status")
-            .eq("id", user_id)
+            .select("id,role,status")
+            .eq("email", email)
             .limit(1)
             .execute()
         )
     except Exception as exc:
-        logger.warning("[auth] users lookup failed for %s: %s", user_id, exc)
+        logger.warning("[auth] users email lookup failed for %s: %s", email, exc)
         return None
 
     if not resp.data:
+        logger.info("[auth] No users row for email=%s", email)
         return None
     row = resp.data[0]
     if row.get("status") and row["status"] != "active":
-        # Suspended/inactive — surface no role so _require_role denies access.
-        logger.info("[auth] User %s has status=%s — denying", user_id, row["status"])
+        logger.info("[auth] User %s status=%s — denying", email, row["status"])
         return None
     role = row.get("role")
-    if role:
-        _ROLE_CACHE[user_id] = (role, now + _ROLE_CACHE_TTL_SEC)
-    return role
+    app_user_id = row.get("id")
+    if role and app_user_id:
+        _ROLE_CACHE[email] = (app_user_id, role, now + _ROLE_CACHE_TTL_SEC)
+        return (app_user_id, role)
+    return None
 
 
 def get_actor(request: Request) -> dict:
     """Return {'user_id', 'user_role'} for the calling request.
 
     Preference order:
-      1. JWT in Authorization header (verified) → role looked up from users table
-      2. X-User-Id + X-User-Role headers (dev shim) — trusted only if no JWT
-
-    Both keys may be None if the caller is unauthenticated.
+      1. Bearer JWT → verified via Supabase → email → users table lookup
+      2. X-User-Id + X-User-Role dev shim (no Bearer token present)
     """
     token = _bearer_token(request)
     if token:
-        claims = _verify_jwt(token)
-        if claims:
-            user_id = claims.get("sub")
-            # Prefer role from app_metadata if Supabase has been configured to
-            # mint it into the JWT; otherwise fall back to the users table.
-            role = (
-                (claims.get("app_metadata") or {}).get("role")
-                or (claims.get("user_metadata") or {}).get("role")
-            )
-            if not role and user_id:
-                role = _lookup_role(user_id)
-            return {"user_id": user_id, "user_role": role}
+        email = _verify_token_via_supabase(token)
+        if email:
+            result = _lookup_by_email(email)
+            if result:
+                app_user_id, role = result
+                return {"user_id": app_user_id, "user_role": role}
+            # Authenticated but no matching users row — no role granted.
+            return {"user_id": None, "user_role": None}
 
     # Fallback: dev header shim
     return {
@@ -150,13 +127,10 @@ def get_actor(request: Request) -> dict:
 
 
 def require_role(request: Request, *allowed: str) -> dict:
-    """Server-side role gate. Returns the resolved actor on success; raises
-    403 otherwise. Use as the first line of any role-restricted endpoint:
+    """Role gate — raises 403 if the verified role isn't in `allowed`.
 
+    Usage:
         actor = require_role(request, "system_admin")
-
-    Combines identity resolution with policy check so callers can't forget
-    to verify after extracting headers.
     """
     actor = get_actor(request)
     if actor.get("user_role") not in allowed:

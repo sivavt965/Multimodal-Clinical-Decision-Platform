@@ -1,19 +1,17 @@
 /**
- * userRole.ts — dev-only role context (pre-auth).
+ * userRole.ts — Role context, Phase 5 edition.
  *
- * Lets us build role-gated UI without blocking on real Supabase Auth.
- * The four demo users below match the rows seeded by
- * `backend/seed_demo_users.py`.  When real auth lands (Phase 5), this
- * file is replaced by a Supabase session-derived hook.
+ * Priority:
+ *  1. Real Supabase session (useAuth) → role from /api/me lookup
+ *  2. Dev localStorage shim (cdss_dev_role) — active when no real session
  *
- * Internals: a tiny external store + useSyncExternalStore so that every
- * consumer of useUserRole() re-renders when ANY component calls setRole().
- * Without this, each useState was local and switching roles in the header
- * left other components stale until a manual refresh.
+ * The `DEMO_USERS` roster and `RoleSwitcher` component are kept for the
+ * dev shim path so local development still works without a live auth session.
  */
 'use client';
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useAuth } from './auth';
 import type { UserRole, PlatformUser } from './types';
 
 const STORAGE_KEY = 'cdss_dev_role';
@@ -54,10 +52,10 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   system_admin:   'System Admin',
 };
 
-// ── External store wiring ────────────────────────────────────────────────
+// ── Dev shim external store ──────────────────────────────────────────────────
 const listeners = new Set<() => void>();
 
-function readRole(): UserRole {
+function readDevRole(): UserRole {
   if (typeof window === 'undefined') return DEFAULT_ROLE;
   const v = window.localStorage.getItem(STORAGE_KEY);
   return v && v in DEMO_USERS ? (v as UserRole) : DEFAULT_ROLE;
@@ -65,7 +63,6 @@ function readRole(): UserRole {
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  // Also listen for storage events from other tabs.
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', listener);
   }
@@ -86,19 +83,48 @@ function setRoleGlobal(r: UserRole): void {
 
 const getServerSnapshot = (): UserRole => DEFAULT_ROLE;
 
+// ── Combined hook ─────────────────────────────────────────────────────────────
+
 /**
- * Returns the active role (synced across all components) and a global
- * setter. Hydrated flag stays around so consumers can skip render until
- * client-side mount when they need to avoid a flash of the default role.
+ * Returns the active role and user, synced across all components.
+ *
+ * If a real Supabase session is active, role and user come from the
+ * authenticated profile. Otherwise falls back to the dev localStorage shim.
  */
 export function useUserRole(): {
   role: UserRole;
-  user: typeof DEMO_USERS[UserRole];
+  user: Pick<PlatformUser, 'id' | 'email' | 'full_name' | 'role'>;
   setRole: (r: UserRole) => void;
   hydrated: boolean;
+  isRealSession: boolean;
 } {
-  const role = useSyncExternalStore(subscribe, readRole, getServerSnapshot);
+  const { session, userProfile, loading } = useAuth();
+  const devRole = useSyncExternalStore(subscribe, readDevRole, getServerSnapshot);
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
-  return { role, user: DEMO_USERS[role], setRole: setRoleGlobal, hydrated };
+
+  const isRealSession = !loading && !!session && !!userProfile;
+
+  if (isRealSession && userProfile) {
+    return {
+      role: userProfile.role,
+      user: {
+        id:        userProfile.id,
+        email:     userProfile.email,
+        full_name: userProfile.full_name,
+        role:      userProfile.role,
+      },
+      setRole: setRoleGlobal, // no-op in real auth (role is from DB)
+      hydrated: true,
+      isRealSession: true,
+    };
+  }
+
+  return {
+    role:          devRole,
+    user:          DEMO_USERS[devRole],
+    setRole:       setRoleGlobal,
+    hydrated,
+    isRealSession: false,
+  };
 }

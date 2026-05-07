@@ -1,13 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Activity, Users, Settings, BookOpen, LogOut } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { RoleSwitcher } from '@/components/shared/RoleSwitcher';
 import { useUserRole } from '@/lib/userRole';
+import { useAuth } from '@/lib/auth';
 import type { UserRole } from '@/lib/types';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -32,7 +33,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || '';
+  const router = useRouter();
   const { role, hydrated } = useUserRole();
+  const { session, loading: authLoading, signOut } = useAuth();
+
+  // Redirect to /login if auth has resolved and there's no session.
+  useEffect(() => {
+    if (!authLoading && !session) {
+      router.replace('/login');
+    }
+  }, [authLoading, session, router]);
 
   // Pre-hydration we render with the default role to keep SSR markup stable;
   // /admin link is hidden until we know the role on the client.
@@ -86,13 +96,13 @@ export default function DashboardLayout({
               })}
               <div className="w-px h-5 bg-slate-200 mx-3" />
               <RoleSwitcher />
-              <Link
-                href="/login"
+              <button
+                onClick={signOut}
                 className="ml-1 px-3 py-2 text-sm font-medium text-red-600 hover:text-white hover:bg-red-600 rounded-lg flex items-center gap-2 transition-all duration-150"
               >
                 <LogOut className="h-4 w-4" />
                 Logout
-              </Link>
+              </button>
             </nav>
           </div>
         </div>
