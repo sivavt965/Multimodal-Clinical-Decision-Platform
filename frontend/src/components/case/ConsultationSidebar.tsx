@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCaseStore } from '@/store/caseStore';
 import { fetchCaseDetail } from '@/lib/api';
+import { useUserRole } from '@/lib/userRole';
 import { X, Send, User, Stethoscope, Clock, CheckCheck, Check, MessageSquarePlus } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -44,8 +45,15 @@ export function ConsultationSidebar() {
   const currentCase   = useCaseStore((state) => state.currentCase);
   const sendMessage   = useCaseStore((state) => state.sendMessage);
 
+  const { role, user } = useUserRole();
+  // The sender role is whichever clinical role the logged-in user has.
+  // Admin roles can't send chat (UI is hidden below); we still pick a
+  // safe default so type checks pass and the styling resolves.
+  const senderRole: 'ward_doctor' | 'radiologist' =
+    role === 'radiologist' ? 'radiologist' : 'ward_doctor';
+  const canSend = role === 'ward_doctor' || role === 'radiologist';
+
   const [input, setInput] = useState('');
-  const [senderRole, setSenderRole] = useState<'ward_doctor' | 'radiologist'>('radiologist');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -193,71 +201,61 @@ export function ConsultationSidebar() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ── Role Selector + Input ── */}
+      {/* ── Sender identity + Input ── */}
       <div className="border-t border-gray-200 bg-white shrink-0">
-        {/* Sender role toggle */}
-        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">Sending as:</span>
-          <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5 w-full">
-            <button
-              type="button"
-              onClick={() => setSenderRole('ward_doctor')}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-semibold transition-all",
-                senderRole === 'ward_doctor'
-                  ? "bg-emerald-500 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <User className="w-3 h-3" />
-              Ward Doctor
-            </button>
-            <button
-              type="button"
-              onClick={() => setSenderRole('radiologist')}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-semibold transition-all",
-                senderRole === 'radiologist'
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <Stethoscope className="w-3 h-3" />
-              Radiologist
-            </button>
+        {/* Static "Sending as" chip — derived from the authenticated user */}
+        {canSend && (
+          <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">Sending as:</span>
+            <div className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold",
+              senderRole === 'radiologist' ? "bg-blue-600 text-white" : "bg-emerald-500 text-white",
+            )}>
+              {senderRole === 'radiologist' ? <Stethoscope className="w-3 h-3" /> : <User className="w-3 h-3" />}
+              <span>{user.full_name}</span>
+              <span className="opacity-70 font-normal">· {ROLE_CONFIG[senderRole].label}</span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Message input */}
+        {/* Message input — gated on a clinical role */}
         <div className="px-4 pb-4">
-          <form onSubmit={handleSend} className="relative">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={ROLE_CONFIG[senderRole].placeholder}
-              rows={3}
-              className="w-full border border-gray-200 rounded-xl pl-3 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none transition-colors"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend(e as any);
-                }
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className={cn(
-                "absolute bottom-3 right-3 p-1.5 text-white rounded-lg transition-colors disabled:bg-gray-200 disabled:cursor-not-allowed",
-                ROLE_CONFIG[senderRole].sendBtn
-              )}
-              title="Send (Enter)"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
-          <p className="text-[10px] text-gray-400 mt-1 text-right">Enter to send · Shift+Enter for newline</p>
+          {canSend ? (
+            <form onSubmit={handleSend} className="relative">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={ROLE_CONFIG[senderRole].placeholder}
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl pl-3 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none transition-colors"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e as any);
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className={cn(
+                  "absolute bottom-3 right-3 p-1.5 text-white rounded-lg transition-colors disabled:bg-gray-200 disabled:cursor-not-allowed",
+                  ROLE_CONFIG[senderRole].sendBtn
+                )}
+                title="Send (Enter)"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          ) : (
+            <div className="border border-gray-200 rounded-xl px-3 py-3 text-xs text-gray-500 bg-gray-50">
+              Read-only — only ward doctors and radiologists can post in clinical consultations.
+            </div>
+          )}
+          {canSend && (
+            <p className="text-[10px] text-gray-400 mt-1 text-right">Enter to send · Shift+Enter for newline</p>
+          )}
         </div>
       </div>
     </div>
