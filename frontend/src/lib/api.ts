@@ -88,7 +88,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 import type { CaseDetail, CaseSummary, ConsultationMessage, PlatformUser, AuditLogEntry } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
-// Admin (system_admin only — gating happens client-side until Phase 5)
+// Admin (system_admin only — gated client-side AND server-side via require_role)
 // ---------------------------------------------------------------------------
 export async function listUsers(): Promise<PlatformUser[]> {
   return request<PlatformUser[]>('/api/admin/users');
@@ -171,9 +171,17 @@ export function postConsultationMessage(
   });
 }
 
+export interface HealthResponse {
+  status: string;
+  db_status: string;
+  cases_in_db: number | string;
+  faiss_index_size: number;
+  timestamp: string;
+}
+
 /** GET /api/health — lightweight health check */
-export function checkHealth(): Promise<{ status: string; cases_loaded: number }> {
-  return request('/api/health');
+export function checkHealth(): Promise<HealthResponse> {
+  return request<HealthResponse>('/api/health');
 }
 
 /** POST /api/labs/parse — parse a CSV/JSON lab file via the backend */
@@ -186,10 +194,12 @@ export async function parseLabFile(file: File): Promise<{
   form.append('file', file);
 
   let res: Response;
+  const headers = await authHeaders();
   try {
     res = await fetch(`${API_BASE}/api/labs/parse`, {
       method: 'POST',
       body: form,
+      headers,
     });
   } catch {
     throw new ApiError('Unable to reach the backend server.', 0);

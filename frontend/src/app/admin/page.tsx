@@ -8,38 +8,19 @@ import {
   CheckCircle2, XCircle, RefreshCcw, Loader2, Wifi, WifiOff, Users, LogIn,
   ShieldAlert, ScrollText, Shield,
 } from 'lucide-react';
-import { listUsers, listAuditLog, createUser, updateUser } from '@/lib/api';
+import {
+  listUsers, listAuditLog, createUser, updateUser,
+  checkHealth, fetchCaseSummaries,
+} from '@/lib/api';
+import type { HealthResponse } from '@/lib/api';
 import { useUserRole, ROLE_LABELS } from '@/lib/userRole';
-import type { PlatformUser, AuditLogEntry, UserRole } from '@/lib/types';
+import type { PlatformUser, AuditLogEntry, UserRole, CaseSummary } from '@/lib/types';
 
 interface SessionRecord {
   id: string;
   userId: string;
   loginAt: string;
   durationMs: number | null;
-}
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-interface HealthData {
-  status: string;
-  db_status: string;
-  cases_in_db: number | string;
-  faiss_index_size: number;
-  timestamp: string;
-}
-
-interface CaseSummary {
-  case_id: string;
-  patient_name: string;
-  mrn: string;
-  admitted_at: string;
-  phase_a_risk_level: string | null;
-  top_finding_label: string | null;
-  top_finding_badge: string | null;
-  top_finding_probability: number | null;
-  consultation_open: boolean;
-  urgency_flag: boolean;
 }
 
 function formatDuration(ms: number): string {
@@ -57,7 +38,7 @@ export default function AdminPage() {
   const router = useRouter();
   const { role, hydrated, user } = useUserRole();
 
-  const [health, setHealth] = useState<HealthData | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,20 +114,12 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [healthRes, casesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/health`),
-        fetch(`${API_BASE}/api/cases`),
+      const [healthData, casesData] = await Promise.all([
+        checkHealth(),
+        fetchCaseSummaries().catch(() => [] as CaseSummary[]),
       ]);
-
-      if (!healthRes.ok) throw new Error(`Health endpoint returned ${healthRes.status}`);
-      const healthData = await healthRes.json();
       setHealth(healthData);
-
-      if (casesRes.ok) {
-        const casesData = await casesRes.json();
-        setCases(casesData);
-      }
-
+      setCases(casesData);
       setLastRefresh(new Date());
     } catch (err: any) {
       setError(err.message || 'Failed to connect to backend');
