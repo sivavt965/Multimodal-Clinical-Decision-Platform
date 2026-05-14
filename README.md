@@ -1,6 +1,15 @@
-# Multimodal Clinical Decision Support Platform
+# Clinical CXR Decision Support Platform
 
-A role-based clinical decision support system that combines chest X-ray analysis (DenseNet121 + Grad-CAM + MC Dropout uncertainty), MIMIC-IV laboratory values, and ECG metadata. Built on the Symile-MIMIC dataset.
+A role-based clinical decision support system focused on the maintained
+**DenseNet121 CXR baseline**: chest X-ray classification, Grad-CAM heatmaps,
+MC Dropout uncertainty, temperature scaling, and FAISS retrieval over DenseNet
+GAP embeddings.
+
+The repository still contains selected references to Symile-MIMIC because the
+project data and optional retrieval experiments came from that ecosystem. The
+public repo is now baseline-first; full Symile training/experiment code is not
+vendored here. Use the upstream Rajesh Lab repository for canonical Symile code
+and experiments: [rajesh-lab/symile](https://github.com/rajesh-lab/symile).
 
 **Stack:** FastAPI · Next.js 13 · Supabase (PostgreSQL + Storage) · PyTorch · FAISS · TailwindCSS
 
@@ -8,7 +17,7 @@ A role-based clinical decision support system that combines chest X-ray analysis
 
 - **Phase A** — Tabular risk scoring from ECG + 50 MIMIC-IV lab biomarkers
 - **Phase B** — CXR classification (8 CheXpert findings) with Grad-CAM heatmaps and MC Dropout uncertainty
-- **Multimodal similarity** — FAISS retrieval over 1024-d DenseNet GAP embeddings to surface comparable historical cases
+- **Similarity search** — FAISS retrieval over 1024-d DenseNet GAP embeddings to surface comparable historical CXR cases
 - **RBAC** — Four roles (radiologist, ward doctor, clinical admin, system admin) with role-gated UI surfaces and an audit trail
 
 ## Architecture at a glance
@@ -124,38 +133,26 @@ The `/admin` route is hidden from the nav for non–system-admin roles and redir
 
 ---
 
-## Retraining the embeddings (advanced)
+## Baseline Training
 
-The application currently uses **1024-d DenseNet121 GAP features** for FAISS similarity. The original Symile architecture proposes **448-d multimodal embeddings** (ECG 128 + CXR 256 + Lab 64) trained with the Symile contrastive loss. The full retraining pipeline is vendored in two locations:
+The maintained training path is the image-only CXR baseline:
 
-### Symile contrastive library — `symile-main/symile-main/`
+- `mimic_project/src/training/train_baseline.py` trains DenseNet121 on CXR labels
+- `mimic_project/src/models/densenet121.py` defines the model used by training and inference
+- `mimic_project/src/data/dataloader_cloud.py` loads image batches with the same resize/normalization expected by inference
+- `mimic_project/src/eval/` contains calibration, uncertainty, and evaluation scripts
+- `mimic_project/inference_engine/` contains standalone inference helpers used during model validation
 
-MIT licensed (rajesh-lab, 2023). Contains:
+Multimodal FiLM/MM training files were removed from the public repo so the
+portfolio version stays focused on the working baseline. Optional Symile
+retrieval code remains documented as an advanced/private path, but the full
+official Symile experiment tree is intentionally not copied here.
 
-- `symile/loss.py`, `symile/similarity.py` — the core contrastive loss + multi-modal similarity functions
-- `experiments/main.py` — training entry point
-- `experiments/models/symile_mimic_model.py` — the multimodal architecture
-- `experiments/data_processing/symile_mimic/` — canonical data preprocessing for MIMIC
+For full Symile training, preprocessing, and paper reproduction scripts, use:
+[https://github.com/rajesh-lab/symile](https://github.com/rajesh-lab/symile).
 
-```bash
-cd symile-main/symile-main
-poetry install              # uses the vendored pyproject.toml + poetry.lock
-poetry run python experiments/main.py --help
-```
-
-### Application-side training — `mimic_project/`
-
-The repo also contains the **DenseNet baseline + FiLM-gated multimodal** training that produced the current `baseline_best.pt` checkpoint:
-
-- `mimic_project/src/training/train_baseline.py` — single-modality CXR baseline
-- `mimic_project/src/training/train_mm.py` — FiLM multimodal training
-- `mimic_project/src/models/model_mm_film_gated.py` — architecture
-- `mimic_project/src/preprocessing/` — preprocessing helpers
-- `mimic_project/inference_engine/` — what `backend/` imports for inference
-
-### Dataset preprocessing — `code/`
-
-The Symile-MIMIC release's official preprocessing scripts (`process_mimic_data.py`, `create_dataset_splits.py`, `process_and_save_tensors.py`). These produce the `train.csv`/`val.csv`/`test.csv` splits and the `.npy` tensor files referenced in the data card.
+See `docs/FUNCTION_GUIDE.md` for a quick explanation of the important runtime
+and training functions.
 
 ---
 
@@ -190,12 +187,12 @@ This repository contains code and references to data under three different licen
 No open-source license declared — **all rights reserved** by default. For clinical demonstration purposes only; not for production clinical use without further validation.
 
 ### Symile contrastive learning library (`symile-main/`)
-**MIT License** — Copyright © 2023 [rajesh-lab](https://github.com/rajesh-lab/symile). License text preserved in `symile-main/symile-main/LICENSE`. The vendored copy is unmodified; for the canonical version see the upstream repo.
+**MIT License** — Copyright © 2023 [rajesh-lab](https://github.com/rajesh-lab/symile). License text preserved in `symile-main/symile-main/LICENSE`. This repo keeps only the runtime files needed by the optional local Symile encoder; for the canonical implementation, experiments, and preprocessing scripts, use the upstream repo.
 
 ### MIMIC-IV / MIMIC-CXR-JPG / Symile-MIMIC dataset and derivatives
 **PhysioNet Credentialed Health Data License v1.5.0** — Copyright © 2025 MIT Laboratory for Computational Physiology. Full text in `LICENSE.txt`. This applies to:
 - Anything imported from the dataset (subject_ids, study_ids, hadm_ids, lab values, DICOM paths)
-- The preprocessing pipelines in `code/` and `symile-main/symile-main/experiments/data_processing/symile_mimic/`
+- Local preprocessing or training pipelines derived from the MIMIC/Symile-MIMIC release
 - The DenseNet checkpoint trained on MIMIC-CXR (`mimic_project/models/baseline_best.pt`)
 - Any inference outputs that map back to MIMIC subjects
 

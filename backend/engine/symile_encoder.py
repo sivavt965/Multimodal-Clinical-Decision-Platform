@@ -26,8 +26,7 @@ Forward outputs:
 The combined embedding indexed in FAISS is  concat([r_c, r_e, r_l])  →  (1, 24576).
 
 Loading the checkpoint on Windows requires patching pathlib.PosixPath because the
-checkpoint was pickled on Linux — same trick the existing test_symile_inference.py
-uses.
+checkpoint was pickled on Linux.
 
 This module is intentionally side-effect-free at import time. Call get_symile_model()
 only when Symile inference is actually needed.
@@ -119,9 +118,8 @@ class _SymileSingleton:
 
             _ensure_symile_imports_on_path()
 
-            # The checkpoint was pickled on Linux — pathlib.PosixPath instances
-            # are present in hyper_parameters and would crash unpickling on
-            # Windows. Same workaround as test_symile_inference.py.
+            # The checkpoint was pickled on Linux; pathlib.PosixPath instances
+            # in hyper_parameters would crash unpickling on Windows.
             _orig_posix = pathlib.PosixPath
             if os.name == "nt":
                 pathlib.PosixPath = pathlib.WindowsPath  # type: ignore[misc]

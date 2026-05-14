@@ -156,8 +156,8 @@ def _preprocess(img: Image.Image, img_size: int = IMG_SIZE) -> torch.Tensor:
         3. Add batch dimension → [1, 3, H, W]
 
     Note: We deliberately do NOT apply ImageNet mean/std normalisation
-    because the training dataloader used mean=(0,0,0), std=(1,1,1)
-    (i.e., simple [0,1] scaling). See dataloader_cloud_mm.py line 191.
+    because the maintained baseline dataloader uses mean=(0,0,0), std=(1,1,1)
+    (i.e., simple [0,1] scaling).
 
     Args:
         img: RGB PIL Image.

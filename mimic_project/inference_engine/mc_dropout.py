@@ -44,16 +44,10 @@ Categorical uncertainty thresholds (empirical, tuned for 20 passes):
 These can be recalibrated on your validation set.
 
 Notes on the DenseNet used here:
-    - The project has two DenseNet variants:
-        a) `densenet121.py`  — uses nn.Dropout layers (classic)
-        b) `model_mm_film_gated.py` — uses F.dropout with mc_dropout flag
-
-    - For the image-only baseline (baseline_best.pt), we use (a) and
-      enable dropout by iterating through nn.Dropout modules and setting
-      `training=True` via a context manager, so BN remains in eval mode.
-
-    - For the multimodal model (mm_film_best.pt), we use (b) and call
-      model.forward(x_img, x_meta, mc_dropout=True) directly.
+    - The maintained baseline lives in `src/models/densenet121.py` and uses
+      nn.Dropout layers.
+    - MC Dropout is enabled by temporarily switching only Dropout modules to
+      training mode, while BatchNorm layers remain in eval mode.
 """
 
 import argparse

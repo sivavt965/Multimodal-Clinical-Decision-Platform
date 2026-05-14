@@ -67,9 +67,19 @@ test.csv
 val_retrieval.csv
 demo_cases.csv
 
-# PDFs / docx specs (binary; let them stay if you want, otherwise uncomment)
-# *.pdf
-# *.docx
+# Local docs/screenshots/thesis artifacts. Keep the repo source-first.
+*.pdf
+*.docx
+*.zip
+Screenshot *.png
+insert_*.py
+thesis_*.docx
+final_*.docx
+*_architecture.png
+*_architecture.svg
+dfd_*.png
+dfd_*.svg
+dashboard.png
 
 # mimic_project — source code is wanted, but exclude bulky outputs/data
 mimic_project/data/
@@ -89,5 +99,4 @@ mimic_project/*.zip
 mimic_project/*.csv
 mimic_project/*.txt
 mimic_project/*.jpg
-
 

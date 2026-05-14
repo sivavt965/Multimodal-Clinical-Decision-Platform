@@ -17,6 +17,12 @@ from src.models.densenet121 import build_densenet121
 
 
 def parse_args():
+    """Collect the baseline training knobs in one place.
+
+    This script intentionally stays image-only. Multimodal/FiLM training was
+    removed from the public repo, so these args describe the maintained
+    DenseNet121 baseline path.
+    """
     p = argparse.ArgumentParser("MIMIC-CXR image-only training (cache + resume + masking + cosine)")
 
     p.add_argument("--csv_path", type=str, default="data/processed/processed_metadata.csv")
@@ -53,6 +59,7 @@ def parse_args():
 
 
 def set_seed(seed: int):
+    """Make dataloader/model initialization reproducible across local runs."""
     import random
     random.seed(seed)
     np.random.seed(seed)
@@ -61,6 +68,7 @@ def set_seed(seed: int):
 
 
 def compute_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+    """Return macro ROC-AUC, or NaN when a split has only one class present."""
     try:
         return float(roc_auc_score(y_true, y_prob, average="macro"))
     except ValueError:
@@ -68,6 +76,7 @@ def compute_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
 
 
 def load_checkpoint(path: str, device: torch.device):
+    """Accept both full training checkpoints and raw state-dict checkpoints."""
     ckpt = torch.load(path, map_location=device)
     if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
         return ckpt, "dict"
@@ -144,7 +153,12 @@ def make_preferential_mask(
 
 
 def masked_bce_with_logits(logits: torch.Tensor, targets: torch.Tensor, keep_mask: torch.Tensor) -> torch.Tensor:
-    # replace -1 sentinel to valid range; masked positions are multiplied by 0 anyway
+    """BCE loss for partially-observed labels.
+
+    `keep_mask` gates the loss elementwise. Targets marked with the -1 sentinel
+    are clamped only to keep BCE numerically valid; they still contribute zero
+    because their mask value is 0.
+    """
     safe_targets = targets.clamp(0.0, 1.0)
     per_elem = F.binary_cross_entropy_with_logits(logits, safe_targets, reduction="none")
     denom = keep_mask.sum().clamp_min(1.0)
@@ -163,6 +177,11 @@ def run_one_epoch(
     mask_neg_share: float = 0.70,
     mask_pos_share: float = 0.30,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
+    """Shared train/eval loop for the baseline.
+
+    Returns loss plus the full target/probability arrays so metrics can be
+    computed outside the loop with exactly the same code for validation/test.
+    """
 
     model.train() if train else model.eval()
 

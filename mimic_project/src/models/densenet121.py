@@ -34,6 +34,12 @@ class DenseNet121(nn.Module):
         self.classifier = nn.Linear(in_features, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the CXR image through DenseNet121 and return 8-label logits.
+
+        The four dropout blocks are deliberately placed through the feature
+        extractor so inference can reuse the same model for MC Dropout
+        uncertainty by temporarily enabling stochastic dropout.
+        """
         f = self.features
 
         x = f.conv0(x)
@@ -65,5 +71,6 @@ class DenseNet121(nn.Module):
 
 
 def build_densenet121(num_classes: int, pretrained: bool = True, dropout_p: float = 0.3) -> nn.Module:
+    """Factory used by training and inference to keep model construction aligned."""
     return DenseNet121(num_classes=num_classes, pretrained=pretrained, dropout_p=dropout_p)
 
